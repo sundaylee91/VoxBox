@@ -21,15 +21,6 @@
 import Foundation
 import AppKit
 
-// MARK: - Server State
-
-enum ServerStatus: Equatable {
-    case stopped
-    case starting
-    case running(port: Int)
-    case error(String)
-}
-
 // MARK: - Log Entry
 
 struct LogEntry: Identifiable, Equatable {
@@ -42,6 +33,16 @@ struct LogEntry: Identifiable, Equatable {
 
 @MainActor
 final class ServerManager: ObservableObject {
+
+    // MARK: - Server Status (nested)
+
+    enum ServerStatus: Equatable {
+        case stopped
+        case starting
+        case downloading(progress: Double)
+        case running(port: Int)
+        case error(String)
+    }
 
     @Published var status: ServerStatus = .stopped
     @Published var logs: [LogEntry] = []
@@ -82,6 +83,19 @@ final class ServerManager: ObservableObject {
         }
     }
 
+    // MARK: - Computed properties
+
+    /// Returns the current server port, or 0 if not running.
+    var port: Int {
+        if case .running(let port) = status { return port }
+        return 0
+    }
+
+    /// Full server log as a single string (for display / clipboard).
+    var logOutput: String {
+        logs.map { "[\($0.timestamp.formatted())] \($0.message)" }.joined(separator: "\n")
+    }
+
     // MARK: - Public API
 
     func start() {
@@ -106,6 +120,26 @@ final class ServerManager: ObservableObject {
         process = nil
         status = .stopped
         appendLog("⏹ Server stopped.")
+    }
+
+    func restart() {
+        stop()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            self?.start()
+        }
+    }
+
+    func openInBrowser() {
+        guard case .running(let port) = status else { return }
+        if let url = URL(string: "http://127.0.0.1:\(port)") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    func copyLogs() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(logOutput, forType: .string)
+        appendLog("📋 Logs copied to clipboard")
     }
 
     // MARK: - Start Sequence
