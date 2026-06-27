@@ -39,6 +39,37 @@ struct SettingsView: View {
                         }
                     }
 
+                    // ── Audio ──
+                    SettingsSection(title: L10n.saveAudio, icon: "waveform") {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Picker(L10n.languageLabel, selection: $serverManager.preferredFormat) {
+                                ForEach(AudioFormat.allCases, id: \.self) { fmt in
+                                    Text(fmt.rawValue).tag(fmt)
+                                }
+                            }
+                            .pickerStyle(.radioGroup)
+                            .disabled(!serverManager.mp3Available && serverManager.preferredFormat == .mp3)
+
+                            if !serverManager.mp3Available {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .foregroundColor(.orange).font(.caption)
+                                    Text("MP3 encoder not available. Install ffmpeg: brew install ffmpeg")
+                                        .font(.caption).foregroundColor(.secondary)
+                                }
+                            }
+
+                            Text(L10n.autoSavedToFolder)
+                                .font(.caption).foregroundColor(.secondary)
+
+                            Button(L10n.openRecordingsFolder) {
+                                serverManager.openRecordingsFolder()
+                            }
+                            .buttonStyle(.bordered)
+                            .font(.caption)
+                        }
+                    }
+
                     // ── Server ──
                     SettingsSection(title: L10n.settingsServer, icon: "server.rack") {
                         Toggle(isOn: $autoStartServer) {

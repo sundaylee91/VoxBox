@@ -38,13 +38,18 @@ struct MenuBarView: View {
                 if case .running = serverManager.status {
                     Button(L10n.openVoxBox) { serverManager.openInBrowser() }
 
+                    // Open Recordings Folder — always visible
+                    Button(L10n.openRecordingsFolderMenu) {
+                        serverManager.openRecordingsFolder()
+                    }
+
                     // Save Last Audio — always visible when running
                     Button(L10n.saveLastAudio) {
                         serverManager.saveAudio(format: serverManager.preferredFormat)
                     }
                     .disabled(serverManager.audioHistory.isEmpty)
 
-                    // Download History submenu
+                    // Download History submenu (secondary)
                     if !serverManager.audioHistory.isEmpty {
                         Menu(L10n.downloadHistory) {
                             ForEach(Array(serverManager.audioHistory.reversed().enumerated()), id: \.element.id) { idx, clip in
