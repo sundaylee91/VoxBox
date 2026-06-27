@@ -152,6 +152,7 @@ struct L10n {
     static var details: String { zh ? "详情" : "Details" }
     static var hide: String { zh ? "隐藏" : "Hide" }
     static var copyLogs: String { zh ? "复制日志" : "Copy Logs" }
+    static var copyError: String { zh ? "复制错误信息" : "Copy Error" }
     static var reportIssue: String { zh ? "报告问题" : "Report Issue" }
     static var installPython: String { zh ? "安装 Python: brew install python@3.12" : "Install Python: brew install python@3.12" }
     static var goBackHome: String { zh ? "回到主页" : "Go back to the home screen" }
