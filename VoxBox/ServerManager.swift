@@ -5,18 +5,6 @@
 //  Manages the voxcpmane2 Python server lifecycle.
 //  Uses `uv` for package management to avoid PEP 668 restrictions.
 //
-//  Chip-specific behavior:
-//    M1 / M1 Pro / M1 Max / M1 Ultra
-//      → Installs voxcpmane2==0.1.3b1 (beta) with --split-base-lm.
-//        Reason: M1 ANE cannot load the full BaseLM package;
-//        --split-base-lm downloads two smaller split packages instead.
-//    M2 / M3 / M4 and later
-//      → Installs latest stable voxcpmane2 (no --split-base-lm).
-//
-//  Safety net for all chips:
-//    If stderr contains "ANE model load has failed" at runtime,
-//    the server stops and suggests switching to the beta version.
-//
 
 import Foundation
 import AppKit
@@ -34,6 +22,15 @@ enum AudioFormat: String, CaseIterable {
         case .mp3: return "audio/mpeg"
         }
     }
+}
+
+// MARK: - Audio Clip (for download history)
+
+struct AudioClip: Identifiable {
+    let id = UUID()
+    let data: Data
+    let text: String
+    let timestamp: Date
 }
 
 // MARK: - Log Entry
@@ -55,7 +52,7 @@ final class ServerManager: ObservableObject {
         case stopped
         case starting
         case downloading(progress: Double)
-        case warmingUp(port: Int)   // Process launched, waiting for HTTP to respond
+        case warmingUp(port: Int)
         case running(port: Int)
         case error(String)
     }
@@ -63,10 +60,14 @@ final class ServerManager: ObservableObject {
     @Published var status: ServerStatus = .stopped
     @Published var logs: [LogEntry] = []
 
-    /// Last captured audio data from the web UI (ready for save).
+    /// Last captured audio data (kept for backward compat).
     @Published var lastAudioData: Data?
-    /// The text that was used to generate the last audio (for file naming).
+    /// The text that was used to generate the last audio.
     @Published var lastAudioText: String?
+
+    /// Full history of captured audio clips (max 50).
+    @Published var audioHistory: [AudioClip] = []
+
     /// Preferred export format.
     @Published var preferredFormat: AudioFormat {
         didSet {
@@ -89,6 +90,9 @@ final class ServerManager: ObservableObject {
 
     /// Path to a working MP3 encoder (ffmpeg or lame), if any.
     private var mp3EncoderPath: String?
+
+    /// Max number of audio clips to keep in history.
+    private let maxHistoryCount = 50
 
     // MARK: - Init
 
@@ -137,7 +141,6 @@ final class ServerManager: ObservableObject {
 
     // MARK: - Computed properties
 
-    /// Returns the current server port, or 0 if not running / warming up.
     var port: Int {
         switch status {
         case .running(let port), .warmingUp(let port):
@@ -147,7 +150,6 @@ final class ServerManager: ObservableObject {
         }
     }
 
-    /// Full server log as a single string (for display / clipboard).
     var logOutput: String {
         logs.map { "[\($0.timestamp.formatted())] \($0.message)" }.joined(separator: "\n")
     }
@@ -181,6 +183,7 @@ final class ServerManager: ObservableObject {
         status = .stopped
         lastAudioData = nil
         lastAudioText = nil
+        audioHistory.removeAll()
         appendLog("⏹ Server stopped.")
     }
 
@@ -205,22 +208,37 @@ final class ServerManager: ObservableObject {
         appendLog("📋 Logs copied to clipboard")
     }
 
+    // MARK: - Audio Capture
+
+    /// Called by WebView when audio is captured. Adds to history and updates lastAudio.
+    func captureAudio(data: Data, text: String) {
+        lastAudioData = data
+        lastAudioText = text
+
+        let clip = AudioClip(data: data, text: text, timestamp: Date())
+        audioHistory.append(clip)
+
+        // Trim to max
+        while audioHistory.count > maxHistoryCount {
+            audioHistory.removeFirst()
+        }
+
+        appendLog("🎵 Audio captured: \(data.count) bytes, text: \"\(text.prefix(40))\" (history: \(audioHistory.count))")
+    }
+
     // MARK: - Save Audio
 
-    /// Builds a filename from the text used to generate the audio.
     private func filenameFromText(_ text: String?, format: AudioFormat) -> String {
         var name = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
 
         if !name.isEmpty {
-            // Sanitize: macOS forbids ":" (use full-width "：" instead)
             name = name
-                .replacingOccurrences(of: ":", with: "：")   // full-width colon
+                .replacingOccurrences(of: ":", with: "：")
                 .replacingOccurrences(of: "/", with: "-")
                 .replacingOccurrences(of: "\n", with: " ")
                 .replacingOccurrences(of: "\r", with: " ")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
 
-            // Truncate if too long
             if name.count > 100 {
                 name = String(name.prefix(100))
             }
@@ -233,18 +251,30 @@ final class ServerManager: ObservableObject {
         return "\(name).\(format.fileExtension)"
     }
 
-    /// Opens a native NSSavePanel and writes the last captured audio data to disk.
-    /// - Parameter format: Desired format. If nil, uses preferredFormat.
+    /// Save the most recent audio clip.
     func saveAudio(format: AudioFormat? = nil) {
+        saveAudio(historyIndex: nil, format: format)
+    }
+
+    /// Save audio at a specific history index (0 = oldest). If nil, saves the latest.
+    func saveAudio(historyIndex: Int?, format: AudioFormat? = nil) {
         let fmt = format ?? preferredFormat
 
-        guard let data = lastAudioData else {
+        // Resolve which clip to save
+        let clip: AudioClip?
+        if let idx = historyIndex, idx >= 0, idx < audioHistory.count {
+            clip = audioHistory[idx]
+        } else {
+            clip = audioHistory.last
+        }
+
+        guard let clip = clip else {
             appendLog("⚠️ No audio data to save.")
             let alert = NSAlert()
-            alert.messageText = "No Audio to Save"
-            alert.informativeText = "Generate audio in the web UI first, then try saving again."
+            alert.messageText = L10n.noAudioToSave
+            alert.informativeText = L10n.generateAudioFirst
             alert.alertStyle = .warning
-            alert.addButton(withTitle: "OK")
+            alert.addButton(withTitle: L10n.ok)
             alert.runModal()
             return
         }
@@ -259,12 +289,11 @@ final class ServerManager: ObservableObject {
         }
 
         let savePanel = NSSavePanel()
-        savePanel.title = "Save Generated Audio"
-        savePanel.nameFieldStringValue = filenameFromText(lastAudioText, format: effectiveFormat)
+        savePanel.title = L10n.saveGeneratedAudio
+        savePanel.nameFieldStringValue = filenameFromText(clip.text, format: effectiveFormat)
 
-        // Offer both formats, but put the effective one first
         if mp3Available {
-            savePanel.allowedFileTypes = [effectiveFormat.fileExtension, 
+            savePanel.allowedFileTypes = [effectiveFormat.fileExtension,
                                            effectiveFormat == .wav ? "mp3" : "wav"]
         } else {
             savePanel.allowedFileTypes = ["wav"]
@@ -272,38 +301,31 @@ final class ServerManager: ObservableObject {
         savePanel.canCreateDirectories = true
         savePanel.allowsOtherFileTypes = false
 
+        let data = clip.data
+        let text = clip.text
+
         savePanel.begin { [weak self] response in
             guard response == .OK, let url = savePanel.url, let self = self else { return }
 
             Task { @MainActor in
-                // Determine actual format from chosen file extension
                 let chosenExt = url.pathExtension.lowercased()
                 let chosenFormat: AudioFormat = chosenExt == "mp3" ? .mp3 : .wav
 
-                // If MP3 chosen but not available, abort
                 if chosenFormat == .mp3 && !self.mp3Available {
                     let alert = NSAlert()
-                    alert.messageText = "MP3 Encoder Not Available"
-                    alert.informativeText = """
-                    MP3 encoding requires ffmpeg or lame.
-
-                    Install ffmpeg: brew install ffmpeg
-                    Then restart VoxBox.
-
-                    Save as WAV instead?
-                    """
+                    alert.messageText = L10n.mp3NotAvailable
+                    alert.informativeText = L10n.mp3NotAvailableDesc
                     alert.alertStyle = .warning
-                    alert.addButton(withTitle: "Save as WAV")
-                    alert.addButton(withTitle: "Cancel")
+                    alert.addButton(withTitle: L10n.saveAsWav)
+                    alert.addButton(withTitle: L10n.cancel)
                     if alert.runModal() == .alertFirstButtonReturn {
-                        self.saveAudio(format: .wav)
+                        self.saveAudio(historyIndex: historyIndex, format: .wav)
                     }
                     return
                 }
 
                 do {
                     let outputData: Data
-
                     switch chosenFormat {
                     case .wav:
                         outputData = data
@@ -313,25 +335,20 @@ final class ServerManager: ObservableObject {
 
                     try outputData.write(to: url)
                     self.appendLog("💾 Audio saved to \(url.path) (\(chosenFormat.rawValue))")
-
-                    // Clear after successful save
-                    self.lastAudioData = nil
-                    self.lastAudioText = nil
                 } catch {
                     self.appendLog("❌ Failed to save audio: \(error.localizedDescription)")
 
-                    // Show alert for the error
                     let alert = NSAlert()
-                    alert.messageText = "Save Failed"
+                    alert.messageText = L10n.saveFailed
                     alert.informativeText = error.localizedDescription
                     alert.alertStyle = .critical
-                    alert.addButton(withTitle: "OK")
+                    alert.addButton(withTitle: L10n.ok)
 
                     if case .mp3 = chosenFormat {
-                        alert.addButton(withTitle: "Try WAV Instead")
+                        alert.addButton(withTitle: L10n.tryWavInstead)
                         let result = alert.runModal()
                         if result == .alertSecondButtonReturn {
-                            self.saveAudio(format: .wav)
+                            self.saveAudio(historyIndex: historyIndex, format: .wav)
                         }
                     } else {
                         alert.runModal()
@@ -341,9 +358,9 @@ final class ServerManager: ObservableObject {
         }
     }
 
-    /// Converts WAV PCM data to MP3 using available encoder.
+    // MARK: - MP3 Conversion
+
     private func convertToMP3(wavData: Data) throws -> Data {
-        // Try encoder in order: ffmpeg → lame → afconvert
         if let encoderPath = mp3EncoderPath {
             if encoderPath.hasSuffix("ffmpeg") {
                 return try convertWithFFmpeg(wavData: wavData)
@@ -351,12 +368,9 @@ final class ServerManager: ObservableObject {
                 return try convertWithLame(wavData: wavData)
             }
         }
-
-        // Last resort: try afconvert (may not have MP3 encoder)
         return try convertWithAfconvert(wavData: wavData)
     }
 
-    /// ffmpeg conversion (highest quality)
     private func convertWithFFmpeg(wavData: Data) throws -> Data {
         let tempDir = FileManager.default.temporaryDirectory
         let wavURL = tempDir.appendingPathComponent("voxbox_\(UUID().uuidString).wav")
@@ -371,12 +385,9 @@ final class ServerManager: ObservableObject {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: mp3EncoderPath ?? "/usr/local/bin/ffmpeg")
         process.arguments = [
-            "-y",                    // overwrite output
-            "-i", wavURL.path,       // input
-            "-codec:a", "libmp3lame", // MP3 codec
-            "-b:a", "192k",          // 192 kbps
-            "-q:a", "2",             // high quality VBR
-            mp3URL.path              // output
+            "-y", "-i", wavURL.path,
+            "-codec:a", "libmp3lame", "-b:a", "192k", "-q:a", "2",
+            mp3URL.path
         ]
 
         let errorPipe = Pipe()
@@ -399,7 +410,6 @@ final class ServerManager: ObservableObject {
         return try Data(contentsOf: mp3URL)
     }
 
-    /// lame conversion (fallback)
     private func convertWithLame(wavData: Data) throws -> Data {
         let tempDir = FileManager.default.temporaryDirectory
         let wavURL = tempDir.appendingPathComponent("voxbox_\(UUID().uuidString).wav")
@@ -413,12 +423,7 @@ final class ServerManager: ObservableObject {
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: mp3EncoderPath ?? "/usr/local/bin/lame")
-        process.arguments = [
-            "-h",                    // high quality
-            "-b", "192",             // 192 kbps
-            wavURL.path,
-            mp3URL.path
-        ]
+        process.arguments = ["-h", "-b", "192", wavURL.path, mp3URL.path]
 
         let errorPipe = Pipe()
         process.standardError = errorPipe
@@ -440,7 +445,6 @@ final class ServerManager: ObservableObject {
         return try Data(contentsOf: mp3URL)
     }
 
-    /// afconvert fallback (built-in macOS, but may lack MP3 encoder)
     private func convertWithAfconvert(wavData: Data) throws -> Data {
         let tempDir = FileManager.default.temporaryDirectory
         let wavURL = tempDir.appendingPathComponent("voxbox_\(UUID().uuidString).wav")
@@ -454,13 +458,7 @@ final class ServerManager: ObservableObject {
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/afconvert")
-        // afconvert -f mp3f -d mp3 input.wav -o output.mp3
-        process.arguments = [
-            "-f", "mp3f",
-            "-d", "mp3",           // without dot
-            wavURL.path,
-            "-o", mp3URL.path
-        ]
+        process.arguments = ["-f", "mp3f", "-d", "mp3", wavURL.path, "-o", mp3URL.path]
 
         let errorPipe = Pipe()
         process.standardError = errorPipe
@@ -469,7 +467,6 @@ final class ServerManager: ObservableObject {
         try process.run()
         process.waitUntilExit()
 
-        // Check if output file exists and is non-empty
         if process.terminationStatus == 0,
            FileManager.default.fileExists(atPath: mp3URL.path),
            let attrs = try? FileManager.default.attributesOfItem(atPath: mp3URL.path),
@@ -499,9 +496,7 @@ final class ServerManager: ObservableObject {
 
     // MARK: - MP3 Encoder Detection
 
-    /// Returns the path to a working MP3 encoder (ffmpeg > lame), or nil.
     private static func detectMP3Encoder() -> String? {
-        // Check ffmpeg
         let ffmpegPaths = [
             "/opt/homebrew/bin/ffmpeg",
             "/usr/local/bin/ffmpeg",
@@ -509,7 +504,6 @@ final class ServerManager: ObservableObject {
         ]
         for path in ffmpegPaths {
             if FileManager.default.fileExists(atPath: path) {
-                // Quick sanity check: does it run?
                 let proc = Process()
                 proc.executableURL = URL(fileURLWithPath: path)
                 proc.arguments = ["-version"]
@@ -518,14 +512,11 @@ final class ServerManager: ObservableObject {
                 do {
                     try proc.run()
                     proc.waitUntilExit()
-                    if proc.terminationStatus == 0 {
-                        return path
-                    }
+                    if proc.terminationStatus == 0 { return path }
                 } catch {}
             }
         }
 
-        // Check lame
         let lamePaths = [
             "/opt/homebrew/bin/lame",
             "/usr/local/bin/lame",
@@ -540,9 +531,7 @@ final class ServerManager: ObservableObject {
                 do {
                     try proc.run()
                     proc.waitUntilExit()
-                    if proc.terminationStatus == 0 {
-                        return path
-                    }
+                    if proc.terminationStatus == 0 { return path }
                 } catch {}
             }
         }
@@ -553,7 +542,6 @@ final class ServerManager: ObservableObject {
     // MARK: - Start Sequence
 
     private func performStart() async {
-        // ── 1. Locate or install `uv` ──
         let uv: String
         if !uvPath.isEmpty {
             uv = uvPath
@@ -569,14 +557,12 @@ final class ServerManager: ObservableObject {
             }
         }
 
-        // ── 2. Find system Python (3.10–3.12) ──
         guard let pythonPath = ServerManager.findSystemPython() else {
             setError("Python >=3.10,<3.13 not found. Install via Homebrew: brew install python@3.12")
             return
         }
         appendLog("✅ Found \(pythonPath)")
 
-        // ── 3. Install voxcpmane2 ──
         let installArgs: [String]
         if isM1Series {
             appendLog("🍎 M1-series: installing voxcpmane2==0.1.3b1 for --split-base-lm")
@@ -605,7 +591,6 @@ final class ServerManager: ObservableObject {
             return
         }
 
-        // ── 4. Locate voxcpmane2-server ──
         let serverBinary = "\(NSHomeDirectory())/.local/bin/voxcpmane2-server"
         guard FileManager.default.fileExists(atPath: serverBinary) else {
             setError("voxcpmane2-server not found at \(serverBinary)")
@@ -613,14 +598,12 @@ final class ServerManager: ObservableObject {
         }
         appendLog("✅ voxcpmane2-server: \(serverBinary)")
 
-        // ── 5. Find available port ──
         guard let port = findAvailablePort() else {
             setError("No available port found.")
             return
         }
         appendLog("🔌 Using port \(port)")
 
-        // ── 6. Build launch arguments ──
         var serverArgs = [
             "--host", "127.0.0.1",
             "--port", "\(port)",
@@ -630,7 +613,6 @@ final class ServerManager: ObservableObject {
             appendLog("⚡ Launching with --split-base-lm (M1-series)")
         }
 
-        // ── 7. Launch server ──
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: serverBinary)
         proc.arguments = serverArgs

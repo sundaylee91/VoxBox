@@ -2,12 +2,13 @@ import SwiftUI
 
 struct LoadingView: View {
     let message: String
+    @ObservedObject private var loc = LocalizationManager.shared
     @State private var isAnimating = false
-    
+
     var body: some View {
         VStack(spacing: 32) {
             Spacer()
-            
+
             ZStack {
                 Circle().stroke(Color.blue.opacity(0.15), lineWidth: 6).frame(width: 64, height: 64)
                 Circle()
@@ -19,12 +20,12 @@ struct LoadingView: View {
                     .animation(.linear(duration: 1.2).repeatForever(autoreverses: false), value: isAnimating)
             }
             .onAppear { isAnimating = true }
-            
+
             VStack(spacing: 8) {
                 Text(message).font(.headline)
-                Text("This may take a moment on first launch…").font(.subheadline).foregroundColor(.secondary)
+                Text(L10n.firstLaunchMoment).font(.subheadline).foregroundColor(.secondary)
             }
-            
+
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

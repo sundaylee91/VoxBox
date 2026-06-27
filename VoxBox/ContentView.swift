@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var serverManager: ServerManager
+    @ObservedObject private var loc = LocalizationManager.shared
     @State private var showSettings = false
 
     var body: some View {
@@ -16,7 +17,7 @@ struct ContentView: View {
                 case .stopped:
                     LaunchView()
                 case .starting:
-                    LoadingView(message: "Starting Python backend…")
+                    LoadingView(message: L10n.loadingPython)
                 case .downloading(let progress):
                     ModelDownloadView(progress: progress)
                 case .warmingUp(let port):
@@ -25,11 +26,13 @@ struct ContentView: View {
                     WebView(
                         url: URL(string: "http://127.0.0.1:\(serverManager.port)")!,
                         onAudioCaptured: { data, text in
-                            serverManager.lastAudioData = data
-                            serverManager.lastAudioText = text
+                            serverManager.captureAudio(data: data, text: text)
                         },
                         onSaveRequested: {
                             serverManager.saveAudio()
+                        },
+                        onSaveHistoryItem: { index in
+                            serverManager.saveAudio(historyIndex: index)
                         }
                     )
                 case .error(let message):
@@ -42,16 +45,29 @@ struct ContentView: View {
                 }
             }
 
+            // ── Status bar overlay (glass effect, visible on dark backgrounds) ──
             VStack {
                 HStack {
                     Spacer()
                     StatusBadge(status: serverManager.status)
                     Button { showSettings.toggle() } label: {
-                        Image(systemName: "gearshape").font(.system(size: 14))
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.primary)
                     }
-                    .buttonStyle(.plain).padding(.trailing, 8).help("Settings")
+                    .buttonStyle(.plain)
+                    .padding(.trailing, 8)
+                    .help(L10n.settings)
                 }
-                .padding(.top, 8).padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .padding(.horizontal, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(.regularMaterial)
+                        .shadow(color: .black.opacity(0.08), radius: 4, y: 2)
+                )
+                .padding(.top, 8)
+                .padding(.horizontal, 12)
                 Spacer()
             }
         }
@@ -71,6 +87,7 @@ extension Notification.Name {
 
 struct WarmingUpView: View {
     let port: Int
+    @ObservedObject private var loc = LocalizationManager.shared
     @State private var isAnimating = false
     @State private var dots = 0
     let timer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
@@ -92,10 +109,10 @@ struct WarmingUpView: View {
             .onAppear { isAnimating = true }
 
             VStack(spacing: 8) {
-                Text("Server is warming up\(String(repeating: ".", count: dots))")
+                Text(L10n.serverWarmingUp(dots))
                     .font(.headline)
                     .onReceive(timer) { _ in dots = (dots + 1) % 4 }
-                Text("Loading CoreML models into Neural Engine…")
+                Text(L10n.loadingCoreML)
                     .font(.subheadline).foregroundColor(.secondary)
                 Text("Port: \(port)")
                     .font(.caption)
@@ -113,14 +130,20 @@ struct WarmingUpView: View {
 
 struct StatusBadge: View {
     let status: ServerManager.ServerStatus
+    @ObservedObject private var loc = LocalizationManager.shared
 
     var body: some View {
         HStack(spacing: 6) {
             Circle().fill(statusColor).frame(width: 8, height: 8)
-            Text(statusLabel).font(.system(size: 11, weight: .medium)).foregroundColor(.secondary)
+            Text(statusLabel)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.primary)
         }
         .padding(.horizontal, 10).padding(.vertical, 4)
-        .background(RoundedRectangle(cornerRadius: 20).fill(Color(nsColor: .quaternaryLabelColor)))
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Color.primary.opacity(0.08))
+        )
     }
 
     private var statusColor: Color {
@@ -134,12 +157,12 @@ struct StatusBadge: View {
 
     private var statusLabel: String {
         switch status {
-        case .running: return "Running"
-        case .starting: return "Starting…"
-        case .warmingUp: return "Warming up…"
-        case .downloading(let p): return "Downloading \(Int(p * 100))%"
-        case .stopped: return "Stopped"
-        case .error: return "Error"
+        case .running: return L10n.statusRunning
+        case .starting: return L10n.statusStarting
+        case .warmingUp: return L10n.statusWarmingUp
+        case .downloading(let p): return L10n.downloadingPct(Int(p * 100))
+        case .stopped: return L10n.statusStopped
+        case .error: return L10n.statusError
         }
     }
 }
