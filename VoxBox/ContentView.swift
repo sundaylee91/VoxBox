@@ -33,6 +33,9 @@ struct ContentView: View {
                         },
                         onSaveHistoryItem: { index in
                             serverManager.saveAudio(historyIndex: index)
+                        },
+                        onOpenRecordingsFolder: {
+                            serverManager.openRecordingsFolder()
                         }
                     )
                 case .error(let message):
@@ -45,29 +48,29 @@ struct ContentView: View {
                 }
             }
 
-            // ── Status bar overlay (glass effect, visible on dark backgrounds) ──
+            // ── Minimal status pill (top-right) ──
             VStack {
                 HStack {
                     Spacer()
-                    StatusBadge(status: serverManager.status)
-                    Button { showSettings.toggle() } label: {
-                        Image(systemName: "gearshape")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(.primary)
+                    HStack(spacing: 4) {
+                        StatusBadge(status: serverManager.status)
+                        Button { showSettings.toggle() } label: {
+                            Image(systemName: "gearshape")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help(L10n.settings)
                     }
-                    .buttonStyle(.plain)
-                    .padding(.trailing, 8)
-                    .help(L10n.settings)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(.ultraThinMaterial)
+                    )
+                    .padding(.top, 4)
+                    .padding(.trailing, 4)
                 }
-                .padding(.vertical, 6)
-                .padding(.horizontal, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(.regularMaterial)
-                        .shadow(color: .black.opacity(0.08), radius: 4, y: 2)
-                )
-                .padding(.top, 8)
-                .padding(.horizontal, 12)
                 Spacer()
             }
         }
@@ -133,16 +136,16 @@ struct StatusBadge: View {
     @ObservedObject private var loc = LocalizationManager.shared
 
     var body: some View {
-        HStack(spacing: 6) {
-            Circle().fill(statusColor).frame(width: 8, height: 8)
+        HStack(spacing: 3) {
+            Circle().fill(statusColor).frame(width: 5, height: 5)
             Text(statusLabel)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 10, weight: .medium))
                 .foregroundColor(.primary)
         }
-        .padding(.horizontal, 10).padding(.vertical, 4)
+        .padding(.horizontal, 6).padding(.vertical, 2)
         .background(
-            RoundedRectangle(cornerRadius: 20)
-                .fill(Color.primary.opacity(0.08))
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.primary.opacity(0.06))
         )
     }
 

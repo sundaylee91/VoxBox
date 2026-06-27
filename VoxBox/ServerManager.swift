@@ -78,6 +78,9 @@ final class ServerManager: ObservableObject {
     /// Whether MP3 export is available (requires ffmpeg, lame, or working afconvert).
     @Published var mp3Available: Bool = false
 
+    /// Folder where all generated audio is auto-saved.
+    let recordingsFolder: URL
+
     private var process: Process?
     private var stdoutPipe: Pipe?
     private var stderrPipe: Pipe?
@@ -106,6 +109,11 @@ final class ServerManager: ObservableObject {
         self.uvPath = ServerManager.findUv()
         self.isAppleSilicon = ServerManager.isAppleSiliconMac()
         self.isM1Series = ServerManager.isM1Series()
+
+        // Auto-save recordings folder in user home
+        self.recordingsFolder = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("VoxBox Recordings")
+        try? FileManager.default.createDirectory(at: recordingsFolder, withIntermediateDirectories: true)
 
         // Restore saved format preference
         if let saved = UserDefaults.standard.string(forKey: "VoxBox.preferredFormat"),
@@ -210,7 +218,7 @@ final class ServerManager: ObservableObject {
 
     // MARK: - Audio Capture
 
-    /// Called by WebView when audio is captured. Adds to history and updates lastAudio.
+    /// Called by WebView when audio is captured. Adds to history, auto-saves, and updates lastAudio.
     func captureAudio(data: Data, text: String) {
         lastAudioData = data
         lastAudioText = text
@@ -223,10 +231,64 @@ final class ServerManager: ObservableObject {
             audioHistory.removeFirst()
         }
 
+        // Auto-save to recordings folder
+        autoSave(audioData: data, text: text)
+
         appendLog("🎵 Audio captured: \(data.count) bytes, text: \"\(text.prefix(40))\" (history: \(audioHistory.count))")
     }
 
-    // MARK: - Save Audio
+    // MARK: - Auto-save & Recordings Folder
+
+    /// Open the recordings folder in Finder.
+    func openRecordingsFolder() {
+        NSWorkspace.shared.open(recordingsFolder)
+    }
+
+    /// Auto-save audio data to the recordings folder in the preferred format.
+    private func autoSave(audioData: Data, text: String) {
+        let fmt = preferredFormat
+
+        // Sanitize filename from text
+        var name = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !name.isEmpty {
+            name = name
+                .replacingOccurrences(of: ":", with: "：")
+                .replacingOccurrences(of: "/", with: "-")
+                .replacingOccurrences(of: "\n", with: " ")
+                .replacingOccurrences(of: "\r", with: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if name.count > 60 { name = String(name.prefix(60)) }
+        }
+        if name.isEmpty { name = "recording" }
+
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd_HHmmss"
+        let timestamp = df.string(from: Date())
+        let filename = "\(timestamp)_\(name).\(fmt.fileExtension)"
+        let fileURL = recordingsFolder.appendingPathComponent(filename)
+
+        // Convert to MP3 if needed and available
+        let outputData: Data
+        if fmt == .mp3 && mp3Available {
+            do {
+                outputData = try convertToMP3(wavData: audioData)
+            } catch {
+                appendLog("⚠️ MP3 conversion failed for auto-save, using WAV: \(error.localizedDescription)")
+                outputData = audioData
+            }
+        } else {
+            outputData = audioData
+        }
+
+        do {
+            try outputData.write(to: fileURL)
+            appendLog("💾 Auto-saved: \(filename)")
+        } catch {
+            appendLog("⚠️ Auto-save failed: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Save Audio (Manual)
 
     private func filenameFromText(_ text: String?, format: AudioFormat) -> String {
         var name = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)

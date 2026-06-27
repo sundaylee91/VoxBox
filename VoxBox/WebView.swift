@@ -5,10 +5,12 @@ struct WebView: NSViewRepresentable {
     let url: URL
     /// (audioData, textUsed)
     var onAudioCaptured: ((Data, String) -> Void)? = nil
-    /// User clicked save in the in-page notification or history panel (index into audioHistory)
+    /// User clicked save in the in-page notification
     var onSaveRequested: (() -> Void)? = nil
     /// User clicked save for a specific history item
     var onSaveHistoryItem: ((Int) -> Void)? = nil
+    /// User clicked the clock icon to open recordings folder
+    var onOpenRecordingsFolder: (() -> Void)? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -16,6 +18,7 @@ struct WebView: NSViewRepresentable {
         context.coordinator.onAudioCaptured = onAudioCaptured
         context.coordinator.onSaveRequested = onSaveRequested
         context.coordinator.onSaveHistoryItem = onSaveHistoryItem
+        context.coordinator.onOpenRecordingsFolder = onOpenRecordingsFolder
 
         let configuration = WKWebViewConfiguration()
         let preferences = WKWebpagePreferences()
@@ -38,7 +41,7 @@ struct WebView: NSViewRepresentable {
         userContentController.addUserScript(bridgeUserScript)
         userContentController.add(context.coordinator, name: "voxbox")
 
-        // ── Audio capture + notification + persistent download button ──
+        // ── Audio capture + clock icon + compact notification ──
         let captureScript = createCaptureScript()
         let captureUserScript = WKUserScript(source: captureScript, injectionTime: .atDocumentStart, forMainFrameOnly: true)
         userContentController.addUserScript(captureUserScript)
@@ -60,6 +63,7 @@ struct WebView: NSViewRepresentable {
         context.coordinator.onAudioCaptured = onAudioCaptured
         context.coordinator.onSaveRequested = onSaveRequested
         context.coordinator.onSaveHistoryItem = onSaveHistoryItem
+        context.coordinator.onOpenRecordingsFolder = onOpenRecordingsFolder
         guard url != context.coordinator.requestedURL else { return }
         context.coordinator.requestedURL = url
         guard !context.coordinator.isLoading else { return }
@@ -72,11 +76,10 @@ struct WebView: NSViewRepresentable {
     private func createCaptureScript() -> String {
         // Read language for JS strings
         let zh = LocalizationManager.shared.isChinese
-        let jsSave = zh ? "💾 保存" : "💾 Save"
-        let jsSaved = zh ? "✅ 已保存!" : "✅ Saved!"
-        let jsHistory = zh ? "📥 历史" : "📥 History"
-        let jsNoAudio = zh ? "暂无音频" : "No audio yet"
-        let jsNotificationTitle = zh ? "🎵 音频已生成" : "🎵 Audio generated"
+        let jsClockTooltip = zh ? "打开录音文件夹" : "Open Recordings Folder"
+        let jsAutoSavedToast = zh ? "🎵 已自动保存" : "🎵 Auto-saved"
+        let jsSaveAs = zh ? "💾" : "💾"
+        let jsOpenFolder = zh ? "📂" : "📂"
 
         return """
 (function() {
@@ -84,9 +87,8 @@ struct WebView: NSViewRepresentable {
     if (window.__voxboxInjected) return;
     window.__voxboxInjected = true;
 
-    // ── Local audio cache (JS side) ──
-    var audioCache = []; // {data: base64, mimeType: string, text: string, time: Date}
-    var MAX_CACHE = 50;
+    // ── Latest clip cache (only need latest for save-as button) ──
+    var latestClip = null; // {data: base64, mimeType: string, text: string, time: string}
 
     // ── Helpers ──
     function arrayBufferToBase64(buffer) {
@@ -105,85 +107,128 @@ struct WebView: NSViewRepresentable {
         return div.innerHTML;
     }
 
-    function timeAgo(date) {
-        var secs = Math.floor((new Date() - date) / 1000);
-        if (secs < 60) return 'just now';
-        if (secs < 3600) return Math.floor(secs/60) + 'm ago';
-        return Math.floor(secs/3600) + 'h ago';
-    }
-
-    // ── Inject keyframes once ──
+    // ── Inject minimal styles once ──
     function injectStyles() {
         if (document.getElementById('voxbox-styles')) return;
         var style = document.createElement('style');
         style.id = 'voxbox-styles';
         style.textContent = [
-            '@keyframes voxboxSlideIn{from{transform:translateX(120%);opacity:0}to{transform:translateX(0);opacity:1}}',
-            '@keyframes voxboxSlideOut{from{transform:translateX(0);opacity:1}to{transform:translateX(120%);opacity:0}}',
-            '@keyframes voxboxFadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}',
-            '#voxbox-history-btn:hover{transform:scale(1.08);box-shadow:0 4px 16px rgba(0,0,0,0.3)}',
-            '#voxbox-history-panel{animation:voxboxFadeIn 0.25s ease-out}',
-            '.voxbox-history-item:hover{background:rgba(255,255,255,0.06)}'
+            '@keyframes voxboxSlideIn{from{transform:translateY(-16px);opacity:0}to{transform:translateY(0);opacity:1}}',
+            '@keyframes voxboxSlideOut{from{transform:translateY(0);opacity:1}to{transform:translateY(-16px);opacity:0}}',
+            '#voxbox-clock-btn:hover{transform:scale(1.1);box-shadow:0 4px 16px rgba(0,0,0,0.35)}'
         ].join('');
         document.head.appendChild(style);
     }
 
-    // ── Floating notification bar (top-right, auto-dismiss) ──
+    // ── Clock icon button (top-left) ──
+    function ensureClockButton() {
+        if (document.getElementById('voxbox-clock-btn')) return;
+        injectStyles();
+
+        var btn = document.createElement('button');
+        btn.id = 'voxbox-clock-btn';
+        btn.innerHTML = '🕐';
+        btn.title = '\\(jsClockTooltip)';
+        btn.style.cssText = [
+            'position:fixed',
+            'top:10px',
+            'left:10px',
+            'z-index:2147483646',
+            'width:34px',
+            'height:34px',
+            'border-radius:50%',
+            'background:rgba(30,30,46,0.85)',
+            'border:1px solid rgba(255,255,255,0.15)',
+            'cursor:pointer',
+            'font-size:17px',
+            'line-height:34px',
+            'text-align:center',
+            'padding:0',
+            'backdrop-filter:blur(10px)',
+            '-webkit-backdrop-filter:blur(10px)',
+            'transition:transform 0.2s,box-shadow 0.2s',
+            'box-shadow:0 2px 10px rgba(0,0,0,0.25)'
+        ].join(';');
+
+        btn.onclick = function(e) {
+            e.preventDefault(); e.stopPropagation();
+            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.voxbox) {
+                window.webkit.messageHandlers.voxbox.postMessage({type: 'openRecordingsFolder'});
+            }
+        };
+
+        document.body.appendChild(btn);
+    }
+
+    // ── Compact notification (top-right, below status bar area) ──
     function showNotification(text) {
         var existing = document.getElementById('voxbox-notification');
         if (existing) existing.remove();
 
-        var displayText = text || '\(jsNotificationTitle)';
-        if (displayText.length > 50) displayText = displayText.substring(0, 47) + '...';
+        var displayText = text || 'Audio';
+        if (displayText.length > 40) displayText = displayText.substring(0, 37) + '...';
 
         var notif = document.createElement('div');
         notif.id = 'voxbox-notification';
         notif.innerHTML =
-            '<div style="display:flex;align-items:center;gap:10px;padding:10px 16px;' +
-            'background:linear-gradient(135deg,#1e1e2e,#2a2a3e);color:#e2e8f0;' +
-            'border-radius:12px;font-size:13px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;' +
-            'box-shadow:0 8px 32px rgba(0,0,0,0.35);pointer-events:auto;max-width:460px;' +
-            'border:1px solid rgba(255,255,255,0.08);">' +
-            '<span style="font-size:18px;">🎵</span>' +
-            '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;">' +
+            '<div style="display:flex;align-items:center;gap:6px;padding:6px 10px;' +
+            'background:rgba(22,22,40,0.92);color:#e2e8f0;' +
+            'border-radius:10px;font-size:12px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;' +
+            'box-shadow:0 4px 20px rgba(0,0,0,0.3);pointer-events:auto;max-width:420px;' +
+            'border:1px solid rgba(255,255,255,0.08);line-height:1.3;">' +
+            '<span style="white-space:nowrap;font-weight:500;">\\(jsAutoSavedToast)</span>' +
+            '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#94a3b8;">· ' +
                 escapeHTML(displayText) +
             '</span>' +
-            '<button id="voxbox-notif-save" style="padding:6px 14px;background:#3b82f6;color:white;border:none;' +
-                'border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;white-space:nowrap;' +
-                'transition:background 0.15s;">' +
-                '\(jsSave)' +
+            '<button id="voxbox-notif-open" title="\\(jsOpenFolder)" style="padding:3px 6px;background:rgba(255,255,255,0.08);color:#e2e8f0;border:1px solid rgba(255,255,255,0.1);' +
+                'border-radius:6px;cursor:pointer;font-size:13px;line-height:1;transition:background 0.15s;">' +
+                '\\(jsOpenFolder)' +
             '</button>' +
-            '<button id="voxbox-notif-close" style="padding:4px 6px;background:transparent;color:#94a3b8;' +
-                'border:none;cursor:pointer;font-size:16px;line-height:1;transition:color 0.15s;">' +
+            '<button id="voxbox-notif-save" title="\\(jsSaveAs)" style="padding:3px 6px;background:rgba(255,255,255,0.08);color:#e2e8f0;border:1px solid rgba(255,255,255,0.1);' +
+                'border-radius:6px;cursor:pointer;font-size:13px;line-height:1;transition:background 0.15s;">' +
+                '\\(jsSaveAs)' +
+            '</button>' +
+            '<button id="voxbox-notif-close" style="padding:2px 4px;background:transparent;color:#94a3b8;' +
+                'border:none;cursor:pointer;font-size:14px;line-height:1;transition:color 0.15s;">' +
                 '✕' +
             '</button>' +
             '</div>';
 
         notif.style.cssText = [
             'position:fixed',
-            'top:16px',
-            'right:16px',
+            'top:44px',
+            'right:10px',
             'z-index:2147483647',
             'pointer-events:none',
-            'animation:voxboxSlideIn 0.35s cubic-bezier(0.16,1,0.3,1)'
+            'animation:voxboxSlideIn 0.3s ease-out'
         ].join(';');
 
         document.body.appendChild(notif);
         injectStyles();
 
+        var openBtn = document.getElementById('voxbox-notif-open');
         var saveBtn = document.getElementById('voxbox-notif-save');
         var closeBtn = document.getElementById('voxbox-notif-close');
 
-        saveBtn.onmouseenter = function() { saveBtn.style.background = '#2563eb'; };
-        saveBtn.onmouseleave = function() { saveBtn.style.background = '#3b82f6'; };
+        openBtn.onmouseenter = function() { openBtn.style.background = 'rgba(255,255,255,0.15)'; };
+        openBtn.onmouseleave = function() { openBtn.style.background = 'rgba(255,255,255,0.08)'; };
+        openBtn.onclick = function(e) {
+            e.preventDefault(); e.stopPropagation();
+            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.voxbox) {
+                window.webkit.messageHandlers.voxbox.postMessage({type: 'openRecordingsFolder'});
+            }
+        };
+
+        saveBtn.onmouseenter = function() { saveBtn.style.background = 'rgba(255,255,255,0.15)'; };
+        saveBtn.onmouseleave = function() { saveBtn.style.background = 'rgba(255,255,255,0.08)'; };
         saveBtn.onclick = function(e) {
             e.preventDefault(); e.stopPropagation();
             saveLatestToSwift();
-            saveBtn.textContent = '\(jsSaved)';
             saveBtn.style.background = '#22c55e';
+            saveBtn.textContent = '✅';
             setTimeout(function() {
-                saveBtn.textContent = '\(jsSave)';
-                saveBtn.style.background = '#3b82f6';
+                saveBtn.style.background = 'rgba(255,255,255,0.08)';
+                saveBtn.textContent = '\\(jsSaveAs)';
             }, 1500);
         };
 
@@ -194,7 +239,7 @@ struct WebView: NSViewRepresentable {
             dismissNotification(notif);
         };
 
-        var timer = setTimeout(function() { dismissNotification(notif); }, 30000);
+        var timer = setTimeout(function() { dismissNotification(notif); }, 10000);
         notif._voxboxTimer = timer;
     }
 
@@ -202,182 +247,18 @@ struct WebView: NSViewRepresentable {
         if (!notif || notif._voxboxDismissed) return;
         notif._voxboxDismissed = true;
         clearTimeout(notif._voxboxTimer);
-        notif.style.animation = 'voxboxSlideOut 0.3s cubic-bezier(0.16,1,0.3,1) forwards';
+        notif.style.animation = 'voxboxSlideOut 0.25s ease-in forwards';
         setTimeout(function() {
             if (notif.parentNode) notif.parentNode.removeChild(notif);
-        }, 350);
-    }
-
-    // ── Persistent download history button (bottom-right) ──
-    function ensureHistoryButton() {
-        if (document.getElementById('voxbox-history-btn')) return;
-        injectStyles();
-
-        var btn = document.createElement('button');
-        btn.id = 'voxbox-history-btn';
-        btn.innerHTML = '\(jsHistory)';
-        btn.style.cssText = [
-            'position:fixed',
-            'bottom:20px',
-            'right:20px',
-            'z-index:2147483646',
-            'padding:8px 16px',
-            'background:rgba(30,30,46,0.9)',
-            'color:#e2e8f0',
-            'border:1px solid rgba(255,255,255,0.12)',
-            'border-radius:20px',
-            'cursor:pointer',
-            'font-size:13px',
-            'font-family:-apple-system,BlinkMacSystemFont,sans-serif',
-            'font-weight:500',
-            'backdrop-filter:blur(12px)',
-            '-webkit-backdrop-filter:blur(12px)',
-            'transition:transform 0.2s,box-shadow 0.2s',
-            'box-shadow:0 2px 12px rgba(0,0,0,0.25)'
-        ].join(';');
-
-        btn.onclick = function(e) {
-            e.preventDefault(); e.stopPropagation();
-            toggleHistoryPanel();
-        };
-
-        document.body.appendChild(btn);
-        updateHistoryBadge();
-    }
-
-    function updateHistoryBadge() {
-        var btn = document.getElementById('voxbox-history-btn');
-        if (!btn) return;
-        var count = audioCache.length;
-        if (count > 0) {
-            btn.innerHTML = '\(jsHistory) (' + count + ')';
-        } else {
-            btn.innerHTML = '\(jsHistory)';
-        }
-    }
-
-    function toggleHistoryPanel() {
-        var panel = document.getElementById('voxbox-history-panel');
-        if (panel) {
-            panel.remove();
-            return;
-        }
-        showHistoryPanel();
-    }
-
-    function showHistoryPanel() {
-        // Remove existing
-        var existing = document.getElementById('voxbox-history-panel');
-        if (existing) existing.remove();
-
-        var panel = document.createElement('div');
-        panel.id = 'voxbox-history-panel';
-
-        var itemsHTML = '';
-        if (audioCache.length === 0) {
-            itemsHTML = '<div style="padding:20px;text-align:center;color:#94a3b8;font-size:13px;">\(jsNoAudio)</div>';
-        } else {
-            // Show newest first
-            for (var i = audioCache.length - 1; i >= 0; i--) {
-                var clip = audioCache[i];
-                var label = clip.text || 'Untitled';
-                if (label.length > 40) label = label.substring(0, 37) + '...';
-                var ago = timeAgo(new Date(clip.time));
-                itemsHTML +=
-                    '<div class="voxbox-history-item" style="display:flex;align-items:center;gap:8px;padding:10px 14px;' +
-                    'border-bottom:1px solid rgba(255,255,255,0.05);cursor:default;transition:background 0.15s;">' +
-                    '<span style="font-size:14px;">🎵</span>' +
-                    '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:#e2e8f0;">' +
-                        escapeHTML(label) +
-                    '</span>' +
-                    '<span style="font-size:10px;color:#64748b;white-space:nowrap;">' + ago + '</span>' +
-                    '<button data-idx="' + i + '" class="voxbox-save-item" style="padding:4px 10px;background:#3b82f6;color:white;border:none;' +
-                        'border-radius:6px;cursor:pointer;font-size:11px;font-weight:600;white-space:nowrap;">' +
-                        '\(jsSave)' +
-                    '</button>' +
-                    '</div>';
-            }
-        }
-
-        panel.innerHTML =
-            '<div style="background:rgba(22,22,36,0.96);border:1px solid rgba(255,255,255,0.1);border-radius:14px;' +
-            'overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,0.5);backdrop-filter:blur(16px);' +
-            '-webkit-backdrop-filter:blur(16px);max-height:360px;display:flex;flex-direction:column;">' +
-            '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;' +
-            'border-bottom:1px solid rgba(255,255,255,0.08);">' +
-            '<span style="font-size:13px;font-weight:600;color:#e2e8f0;">' + escapeHTML('\(jsHistory)') + '</span>' +
-            '<button id="voxbox-panel-close" style="background:transparent;border:none;color:#94a3b8;' +
-            'cursor:pointer;font-size:16px;line-height:1;">✕</button>' +
-            '</div>' +
-            '<div style="overflow-y:auto;flex:1;">' +
-                itemsHTML +
-            '</div>' +
-            '</div>';
-
-        panel.style.cssText = [
-            'position:fixed',
-            'bottom:60px',
-            'right:20px',
-            'z-index:2147483647',
-            'width:340px',
-            'font-family:-apple-system,BlinkMacSystemFont,sans-serif'
-        ].join(';');
-
-        document.body.appendChild(panel);
-
-        // Wire close button
-        var closeBtn = document.getElementById('voxbox-panel-close');
-        if (closeBtn) {
-            closeBtn.onclick = function(e) {
-                e.preventDefault(); e.stopPropagation();
-                panel.remove();
-            };
-        }
-
-        // Wire save buttons
-        var saveButtons = panel.querySelectorAll('.voxbox-save-item');
-        saveButtons.forEach(function(btn) {
-            btn.onclick = function(e) {
-                e.preventDefault(); e.stopPropagation();
-                var idx = parseInt(this.getAttribute('data-idx'));
-                saveHistoryItemToSwift(idx);
-                this.textContent = '\(jsSaved)';
-                this.style.background = '#22c55e';
-                setTimeout(function() {
-                    btn.textContent = '\(jsSave)';
-                    btn.style.background = '#3b82f6';
-                }, 1500);
-            };
-        });
+        }, 300);
     }
 
     // ── Send to Swift ──
     function saveLatestToSwift() {
-        if (audioCache.length === 0) return;
-        var idx = audioCache.length - 1;
+        if (!latestClip) return;
         if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.voxbox) {
             window.webkit.messageHandlers.voxbox.postMessage({type: 'saveAudio'});
         }
-    }
-
-    function saveHistoryItemToSwift(idx) {
-        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.voxbox) {
-            window.webkit.messageHandlers.voxbox.postMessage({type: 'saveAudioAtIndex', index: idx});
-        }
-    }
-
-    // ── Add audio to cache ──
-    function addToCache(base64, mimeType, text) {
-        audioCache.push({
-            data: base64,
-            mimeType: mimeType,
-            text: text,
-            time: new Date().toISOString()
-        });
-        if (audioCache.length > MAX_CACHE) {
-            audioCache.shift();
-        }
-        updateHistoryBadge();
     }
 
     // ── Fetch hook - capture /v1/audio/speech responses ──
@@ -409,7 +290,7 @@ struct WebView: NSViewRepresentable {
                         clone.arrayBuffer().then(function(buffer) {
                             var base64 = arrayBufferToBase64(buffer);
 
-                            // Send to Swift
+                            // Send to Swift (will auto-save + cache)
                             if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.audioCaptured) {
                                 window.webkit.messageHandlers.audioCaptured.postMessage({
                                     data: base64,
@@ -418,10 +299,15 @@ struct WebView: NSViewRepresentable {
                                 });
                             }
 
-                            // Add to local cache
-                            addToCache(base64, ct, inputText);
+                            // Keep latest clip for save-as button
+                            latestClip = {
+                                data: base64,
+                                mimeType: ct,
+                                text: inputText,
+                                time: new Date().toISOString()
+                            };
 
-                            // Show floating notification
+                            // Show compact notification
                             showNotification(inputText);
                         }).catch(function(e) {
                             console.log('[VoxBox] Audio capture error:', e);
@@ -434,24 +320,29 @@ struct WebView: NSViewRepresentable {
     }
 
     // ── Init ──
-    ensureHistoryButton();
+    if (document.body) {
+        ensureClockButton();
+    } else {
+        document.addEventListener('DOMContentLoaded', function() {
+            ensureClockButton();
+        });
+    }
 
-    // Re-ensure button on DOM changes (some SPAs replace body content)
+    // Re-ensure clock button on DOM changes (SPAs may replace body)
     var observer = new MutationObserver(function() {
-        if (!document.getElementById('voxbox-history-btn')) {
-            ensureHistoryButton();
+        if (!document.getElementById('voxbox-clock-btn')) {
+            ensureClockButton();
         }
     });
     if (document.body) {
         observer.observe(document.body, { childList: true, subtree: true });
     } else {
         document.addEventListener('DOMContentLoaded', function() {
-            ensureHistoryButton();
             observer.observe(document.body, { childList: true, subtree: true });
         });
     }
 
-    console.log('[VoxBox] Capture bridge ready (with history panel)');
+    console.log('[VoxBox] Capture bridge ready (auto-save + clock icon)');
 })();
 """
     }
@@ -462,6 +353,7 @@ struct WebView: NSViewRepresentable {
         var onAudioCaptured: ((Data, String) -> Void)?
         var onSaveRequested: (() -> Void)?
         var onSaveHistoryItem: ((Int) -> Void)?
+        var onOpenRecordingsFolder: (() -> Void)?
         var requestedURL: URL?
         var isLoading = false
 
@@ -514,6 +406,10 @@ struct WebView: NSViewRepresentable {
                 } else if type == "saveAudioAtIndex", let idx = body["index"] as? Int {
                     DispatchQueue.main.async { [weak self] in
                         self?.onSaveHistoryItem?(idx)
+                    }
+                } else if type == "openRecordingsFolder" {
+                    DispatchQueue.main.async { [weak self] in
+                        self?.onOpenRecordingsFolder?()
                     }
                 }
 
