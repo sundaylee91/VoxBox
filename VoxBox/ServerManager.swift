@@ -674,7 +674,8 @@ final class ServerManager: ObservableObject {
             appendLog("✅ Found uv at \(uv)")
         } else if !uvPath.isEmpty {
             appendLog("⚠️ Cached uv path exists but is not executable: \(uvPath) — will search/install")
-            if let found = ServerManager.findUv(),
+            let found = ServerManager.findUv()
+            if !found.isEmpty,
                FileManager.default.isExecutableFile(atPath: found) {
                 uv = found
                 appendLog("✅ Found working uv at \(uv)")
