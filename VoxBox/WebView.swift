@@ -456,20 +456,8 @@ enum VoxBoxHTML {
         background: var(--btn-secondary-hover-bg);
     }
 
-    /* ── Voice Template Section ── */
-    .voice-template-section {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-    }
-
-    .voice-template-row {
-        display: flex;
-        gap: 6px;
-        align-items: center;
-    }
-
-    .template-btn {
+    /* ── Voice Preset Save/Delete buttons (inline in voice-row) ── */
+    .voice-preset-btn {
         display: flex;
         align-items: center;
         justify-content: center;
@@ -485,18 +473,18 @@ enum VoxBoxHTML {
         flex-shrink: 0;
     }
 
-    .template-btn:hover {
+    .voice-preset-btn:hover {
         background: var(--btn-secondary-hover-bg);
         border-color: rgba(0,122,255,0.3);
     }
 
-    .template-btn.danger:hover {
+    .voice-preset-btn.danger:hover {
         border-color: #FF453A;
         color: #FF453A;
         background: rgba(255,69,58,0.06);
     }
 
-    .template-btn:disabled {
+    .voice-preset-btn:disabled {
         opacity: 0.35;
         cursor: not-allowed;
         pointer-events: none;
@@ -792,11 +780,9 @@ enum VoxBoxHTML {
     <div class="card">
         <!-- Audio Player (above text input) -->
         <div class="player-card" id="player-card">
-            <!-- Progress bar — with side padding -->
             <div class="player-progress-row">
                 <input type="range" class="player-progress" id="player-progress" min="0" max="100" value="0">
             </div>
-            <!-- Controls: play btn, filename, time, replay btn -->
             <div class="player-controls-row">
                 <button class="player-btn play-btn" id="btn-play-pause" data-l10n-title="playPause" title="播放 / 暂停">▶</button>
                 <span class="player-filename" id="player-filename"></span>
@@ -834,20 +820,8 @@ enum VoxBoxHTML {
                     <option value="reference">Reference</option>
                     <option value="high_similarity" data-l10n="highSim">高相似度</option>
                 </select>
-            </div>
-        </div>
-
-        <!-- Voice Templates -->
-        <div class="voice-template-section">
-            <div class="setting-row">
-                <span class="setting-label" data-l10n="voiceTemplateLabel">🎙 语音模板</span>
-            </div>
-            <div class="voice-template-row">
-                <select id="voice-template-select" class="voice-select">
-                    <option value="" data-l10n="noVoiceTemplate">未选择模板…</option>
-                </select>
-                <button class="template-btn" id="btn-save-template" data-l10n-title="saveTemplate" title="保存当前为模板">💾</button>
-                <button class="template-btn danger" id="btn-delete-template" data-l10n-title="deleteTemplate" title="删除选中模板" disabled>🗑</button>
+                <button class="voice-preset-btn" id="btn-save-preset" data-l10n-title="savePreset" title="保存为自定义语音预设">💾</button>
+                <button class="voice-preset-btn danger" id="btn-delete-preset" data-l10n-title="deletePreset" title="删除当前自定义预设" disabled>🗑</button>
             </div>
         </div>
 
@@ -909,14 +883,11 @@ enum VoxBoxHTML {
     var IS_CHINESE = {{IS_CHINESE}};
 
     var L10N = {
-        // App
         appTitle: IS_CHINESE ? 'VoxBox' : 'VoxBox',
         appSubtitle: IS_CHINESE ? '基于 Apple 神经网络引擎的原生 AI 文字转语音' : 'Native AI Text-to-Speech on Apple Neural Engine',
-        // Input
         inputPlaceholder: IS_CHINESE ? '输入或粘贴要朗读的文字…' : 'Type or paste text to speak…',
         clearBtn: IS_CHINESE ? '清空' : 'Clear',
         clearBtnTitle: IS_CHINESE ? '清空文字' : 'Clear text',
-        // Voice
         voiceLabel: IS_CHINESE ? '🎤 语音' : '🎤 Voice',
         refreshVoices: IS_CHINESE ? '刷新语音列表' : 'Refresh voices',
         loadingVoices: IS_CHINESE ? '加载中…' : 'Loading voices…',
@@ -924,42 +895,32 @@ enum VoxBoxHTML {
         noVoices: IS_CHINESE ? '未找到预设语音' : 'No preset voices found',
         loadFailed: IS_CHINESE ? '加载失败' : 'Failed to load voices',
         highSim: IS_CHINESE ? '高相似度' : 'High Sim',
-        // Voice Template
-        voiceTemplateLabel: IS_CHINESE ? '🎙 语音模板' : '🎙 Voice Template',
-        noVoiceTemplate: IS_CHINESE ? '未选择模板…' : 'No template selected…',
-        saveTemplate: IS_CHINESE ? '保存当前为语音模板' : 'Save current as template',
-        deleteTemplate: IS_CHINESE ? '删除选中模板' : 'Delete selected template',
-        templateNamePrompt: IS_CHINESE ? '请输入模板名称：' : 'Enter template name:',
-        templateSaved: IS_CHINESE ? '模板已保存' : 'Template saved',
-        templateDeleted: IS_CHINESE ? '模板已删除' : 'Template deleted',
-        templateLoaded: IS_CHINESE ? '已加载模板：' : 'Loaded template: ',
-        // Advanced
+        savePreset: IS_CHINESE ? '保存为自定义语音预设' : 'Save as custom voice preset',
+        deletePreset: IS_CHINESE ? '删除当前自定义预设' : 'Delete current custom preset',
+        presetNamePrompt: IS_CHINESE ? '请输入自定义预设名称：' : 'Enter custom preset name:',
+        presetSaved: IS_CHINESE ? '自定义预设已保存' : 'Custom preset saved',
+        presetDeleted: IS_CHINESE ? '自定义预设已删除' : 'Custom preset deleted',
         advancedSettings: IS_CHINESE ? '高级设置' : 'Advanced Settings',
         speed: IS_CHINESE ? '语速' : 'Speed',
         sampleRate: IS_CHINESE ? '采样率' : 'Sample Rate',
         cfgScale: IS_CHINESE ? 'CFG 缩放' : 'CFG Scale',
         timesteps: IS_CHINESE ? '推理步数' : 'Timesteps',
-        // Buttons
         generateAndPlay: IS_CHINESE ? '生成并播放' : 'Generate & Play',
         saveAudio: IS_CHINESE ? '保存音频' : 'Save Audio',
-        // Status
         ready: IS_CHINESE ? '就绪' : 'Ready',
         generating: IS_CHINESE ? '正在生成语音…' : 'Generating speech…',
         successPlay: IS_CHINESE ? '✓ 音频已生成' : '✓ Audio generated',
         successSaved: IS_CHINESE ? '✓ 音频已保存' : '✓ Audio saved',
         errorPrefix: IS_CHINESE ? '✗ ' : '✗ ',
-        // Player
         playPause: IS_CHINESE ? '播放 / 暂停' : 'Play / Pause',
         replay: IS_CHINESE ? '重新播放' : 'Replay',
         generatedAudio: IS_CHINESE ? '生成的音频' : 'Generated Audio',
-        // Toast
         toastSaved: IS_CHINESE ? '💾 音频已保存至 ' : '💾 Audio saved to ',
         toastVoxBoxOutput: IS_CHINESE ? 'VoxBox Output 文件夹' : 'VoxBox Output folder'
     };
 
     function _(key) { return L10N[key] || key; }
 
-    // Apply data-l10n attributes
     function applyL10n() {
         document.querySelectorAll('[data-l10n]').forEach(function(el) {
             var key = el.getAttribute('data-l10n');
@@ -1000,9 +961,8 @@ enum VoxBoxHTML {
     var voiceSelect = document.getElementById('voice-select');
     var voiceModeSelect = document.getElementById('voice-mode-select');
     var voiceRefresh = document.getElementById('voice-refresh');
-    var voiceTemplateSelect = document.getElementById('voice-template-select');
-    var btnSaveTemplate = document.getElementById('btn-save-template');
-    var btnDeleteTemplate = document.getElementById('btn-delete-template');
+    var btnSavePreset = document.getElementById('btn-save-preset');
+    var btnDeletePreset = document.getElementById('btn-delete-preset');
     var btnGeneratePlay = document.getElementById('btn-generate-play');
     var btnGenerateSave = document.getElementById('btn-generate-save');
     var btnIconPlay = document.getElementById('btn-icon-play');
@@ -1026,7 +986,8 @@ enum VoxBoxHTML {
     var availableVoices = [];
     var playerSeeking = false;
     var currentBlobURL = null;
-    var voiceTemplates = [];
+    var customVoices = [];
+    var CUSTOM_VOICES_KEY = 'voxbox_custom_voices';
 
     // ── Format time ──
     function formatTime(seconds) {
@@ -1036,31 +997,32 @@ enum VoxBoxHTML {
         return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
     }
 
-    // ── Voice Templates ──
-    var TEMPLATES_KEY = 'voxbox_voice_templates';
-
-    function loadVoiceTemplates() {
+    // ── Custom Voice Presets (localStorage) ──
+    function loadCustomVoices() {
         try {
-            var raw = localStorage.getItem(TEMPLATES_KEY);
-            voiceTemplates = raw ? JSON.parse(raw) : [];
-            if (!Array.isArray(voiceTemplates)) voiceTemplates = [];
+            var raw = localStorage.getItem(CUSTOM_VOICES_KEY);
+            customVoices = raw ? JSON.parse(raw) : [];
+            if (!Array.isArray(customVoices)) customVoices = [];
         } catch(e) {
-            voiceTemplates = [];
+            customVoices = [];
         }
-        refreshTemplateDropdown();
     }
 
-    function saveVoiceTemplates() {
+    function saveCustomVoicesToStorage() {
         try {
-            localStorage.setItem(TEMPLATES_KEY, JSON.stringify(voiceTemplates));
+            localStorage.setItem(CUSTOM_VOICES_KEY, JSON.stringify(customVoices));
         } catch(e) {
-            console.warn('[VoxBox] Failed to save voice templates:', e);
+            console.warn('[VoxBox] Failed to save custom voices:', e);
         }
     }
 
     function getCurrentSettings() {
+        var voiceVal = voiceSelect.value;
+        if (voiceVal && voiceVal.indexOf('__custom__') === 0) {
+            voiceVal = '';
+        }
         return {
-            voice: voiceSelect.value,
+            voice: voiceVal,
             voice_mode: voiceModeSelect.value,
             speed: parseFloat(speedSlider.value),
             sample_rate: parseInt(sampleRateSlider.value),
@@ -1071,7 +1033,15 @@ enum VoxBoxHTML {
 
     function applySettings(settings) {
         if (!settings) return;
-        if (settings.voice !== undefined) voiceSelect.value = settings.voice;
+        if (settings.voice !== undefined) {
+            if (availableVoices.indexOf(settings.voice) >= 0) {
+                voiceSelect.value = settings.voice;
+                voiceSelect.setAttribute('data-is-custom', 'false');
+            } else {
+                voiceSelect.value = '';
+                voiceSelect.setAttribute('data-is-custom', 'false');
+            }
+        }
         if (settings.voice_mode !== undefined) voiceModeSelect.value = settings.voice_mode;
         if (settings.speed !== undefined) {
             speedSlider.value = settings.speed;
@@ -1091,63 +1061,126 @@ enum VoxBoxHTML {
         }
     }
 
-    function refreshTemplateDropdown() {
-        var sel = voiceTemplateSelect;
+    function isCustomVoiceSelected() {
+        return voiceSelect.getAttribute('data-is-custom') === 'true';
+    }
+
+    function getSelectedCustomVoiceIndex() {
+        if (!isCustomVoiceSelected()) return -1;
+        return parseInt(voiceSelect.getAttribute('data-custom-idx')) || 0;
+    }
+
+    function updateDeleteButton() {
+        btnDeletePreset.disabled = !isCustomVoiceSelected();
+    }
+
+    // Rebuild voice dropdown: server presets + custom presets
+    function refreshVoiceDropdown() {
+        var sel = voiceSelect;
+        var currentVal = sel.value;
+        var isCustom = sel.getAttribute('data-is-custom') === 'true';
+        var customIdx = isCustom ? parseInt(sel.getAttribute('data-custom-idx')) : -1;
+
         sel.innerHTML = '';
+
+        // Default option
         var defaultOpt = document.createElement('option');
         defaultOpt.value = '';
-        defaultOpt.textContent = _('noVoiceTemplate');
+        defaultOpt.textContent = _('defaultVoice');
         sel.appendChild(defaultOpt);
 
-        voiceTemplates.forEach(function(tmpl, idx) {
+        // Server presets
+        availableVoices.forEach(function(name) {
             var opt = document.createElement('option');
-            opt.value = String(idx);
-            opt.textContent = tmpl.name || ('Template ' + (idx + 1));
+            opt.value = name;
+            opt.textContent = name;
             sel.appendChild(opt);
         });
 
-        btnDeleteTemplate.disabled = (sel.value === '');
+        // Separator + custom voices
+        if (customVoices.length > 0) {
+            var sep = document.createElement('option');
+            sep.value = '';
+            sep.textContent = '──────────';
+            sep.disabled = true;
+            sel.appendChild(sep);
+
+            customVoices.forEach(function(cv, idx) {
+                var opt = document.createElement('option');
+                opt.value = '__custom__' + idx;
+                opt.textContent = '⭐ ' + cv.name;
+                sel.appendChild(opt);
+            });
+        }
+
+        // Restore selection
+        if (customIdx >= 0 && customIdx < customVoices.length) {
+            sel.value = '__custom__' + customIdx;
+            sel.setAttribute('data-is-custom', 'true');
+            sel.setAttribute('data-custom-idx', String(customIdx));
+        } else if (availableVoices.indexOf(currentVal) >= 0 || currentVal === '') {
+            sel.value = currentVal;
+            sel.setAttribute('data-is-custom', 'false');
+        } else {
+            sel.value = '';
+            sel.setAttribute('data-is-custom', 'false');
+        }
+
+        updateDeleteButton();
     }
 
-    voiceTemplateSelect.addEventListener('change', function() {
-        var idx = parseInt(voiceTemplateSelect.value);
-        btnDeleteTemplate.disabled = isNaN(idx) || idx < 0 || idx >= voiceTemplates.length;
+    // Voice select change
+    voiceSelect.addEventListener('change', function() {
+        var val = voiceSelect.value;
+        if (val && val.indexOf('__custom__') === 0) {
+            var idx = parseInt(val.substring('__custom__'.length));
+            voiceSelect.setAttribute('data-is-custom', 'true');
+            voiceSelect.setAttribute('data-custom-idx', String(idx));
 
-        if (!isNaN(idx) && idx >= 0 && idx < voiceTemplates.length) {
-            var tmpl = voiceTemplates[idx];
-            applySettings(tmpl.settings);
-            showToast(_('templateLoaded') + tmpl.name);
+            if (idx >= 0 && idx < customVoices.length) {
+                var preset = customVoices[idx];
+                applySettings(preset);
+            }
+        } else {
+            voiceSelect.setAttribute('data-is-custom', 'false');
+            voiceSelect.removeAttribute('data-custom-idx');
         }
+        updateDeleteButton();
     });
 
-    btnSaveTemplate.addEventListener('click', function() {
-        var name = prompt(_('templateNamePrompt'), '');
+    // Save custom preset
+    btnSavePreset.addEventListener('click', function() {
+        var name = prompt(_('presetNamePrompt'), '');
         if (!name || !name.trim()) return;
         name = name.trim();
 
         var settings = getCurrentSettings();
-        voiceTemplates.push({ name: name, settings: settings });
-        saveVoiceTemplates();
-        refreshTemplateDropdown();
+        customVoices.push({ name: name, voice: settings.voice, voice_mode: settings.voice_mode, speed: settings.speed, sample_rate: settings.sample_rate, cfg_value: settings.cfg_value, inference_timesteps: settings.inference_timesteps });
+        saveCustomVoicesToStorage();
+        refreshVoiceDropdown();
 
-        voiceTemplateSelect.value = String(voiceTemplates.length - 1);
-        btnDeleteTemplate.disabled = false;
+        // Select the new custom voice
+        voiceSelect.value = '__custom__' + (customVoices.length - 1);
+        voiceSelect.setAttribute('data-is-custom', 'true');
+        voiceSelect.setAttribute('data-custom-idx', String(customVoices.length - 1));
+        updateDeleteButton();
 
-        showToast(_('templateSaved') + ': ' + name);
+        showToast(_('presetSaved') + ': ' + name);
     });
 
-    btnDeleteTemplate.addEventListener('click', function() {
-        var idx = parseInt(voiceTemplateSelect.value);
-        if (isNaN(idx) || idx < 0 || idx >= voiceTemplates.length) return;
+    // Delete custom preset
+    btnDeletePreset.addEventListener('click', function() {
+        var idx = getSelectedCustomVoiceIndex();
+        if (idx < 0 || idx >= customVoices.length) return;
 
-        if (!confirm(IS_CHINESE ? '确定要删除该语音模板吗？' : 'Delete this voice template?')) return;
+        if (!confirm(IS_CHINESE ? '确定要删除该自定义语音预设吗？' : 'Delete this custom voice preset?')) return;
 
-        var name = voiceTemplates[idx].name;
-        voiceTemplates.splice(idx, 1);
-        saveVoiceTemplates();
-        refreshTemplateDropdown();
-        btnDeleteTemplate.disabled = true;
-        showToast(_('templateDeleted') + ': ' + name);
+        var name = customVoices[idx].name;
+        customVoices.splice(idx, 1);
+        saveCustomVoicesToStorage();
+        refreshVoiceDropdown();
+        updateDeleteButton();
+        showToast(_('presetDeleted') + ': ' + name);
     });
 
     // ── Load available voices ──
@@ -1162,40 +1195,21 @@ enum VoxBoxHTML {
             })
             .then(function(data) {
                 availableVoices = [];
-                voiceSelect.innerHTML = '';
-
-                var defaultOpt = document.createElement('option');
-                defaultOpt.value = '';
-                defaultOpt.textContent = _('defaultVoice');
-                voiceSelect.appendChild(defaultOpt);
-
                 if (data && data.voices && Array.isArray(data.voices)) {
                     data.voices.forEach(function(v) {
                         var name = typeof v === 'string' ? v : (v.name || v.voice_name || '');
                         if (name) {
                             availableVoices.push(name);
-                            var opt = document.createElement('option');
-                            opt.value = name;
-                            opt.textContent = name;
-                            voiceSelect.appendChild(opt);
                         }
                     });
                 }
-
-                if (availableVoices.length === 0) {
-                    var noOpt = document.createElement('option');
-                    noOpt.value = '';
-                    noOpt.textContent = _('noVoices');
-                    noOpt.disabled = true;
-                    voiceSelect.appendChild(noOpt);
-                }
-
                 voiceSelect.disabled = false;
-                console.log('[VoxBox] Loaded ' + availableVoices.length + ' voices');
+                refreshVoiceDropdown();
+                console.log('[VoxBox] Loaded ' + availableVoices.length + ' voices, ' + customVoices.length + ' custom');
             })
             .catch(function(err) {
-                voiceSelect.innerHTML = '<option value="">' + _('loadFailed') + '</option>';
                 voiceSelect.disabled = false;
+                refreshVoiceDropdown();
                 console.warn('[VoxBox] Voice load error:', err);
             });
     }
@@ -1293,7 +1307,6 @@ enum VoxBoxHTML {
 
     // ── Create fresh blob URL for playback ──
     function createPlaybackURL(blob) {
-        // Revoke old URL first to avoid memory leaks
         if (currentBlobURL) {
             try { URL.revokeObjectURL(currentBlobURL); } catch(e) {}
             currentBlobURL = null;
@@ -1305,7 +1318,6 @@ enum VoxBoxHTML {
     // ── Ensure audio source is loaded and ready ──
     function ensureAudioReady(blob) {
         var url = currentBlobURL;
-        // If no blob URL or we need a fresh one
         if (!url && blob) {
             url = createPlaybackURL(blob);
         }
@@ -1326,10 +1338,8 @@ enum VoxBoxHTML {
         lastAudioBlob = blob;
         lastText = text;
 
-        // Update save button state
         btnGenerateSave.disabled = !lastAudioBlob || isGenerating;
 
-        // Create persistent playback URL and load
         var url = createPlaybackURL(blob);
         audioPlayer.src = url;
         audioPlayer.load();
@@ -1352,7 +1362,6 @@ enum VoxBoxHTML {
     btnPlayPause.addEventListener('click', function() {
         if (!lastAudioBlob) return;
         if (audioPlayer.paused || audioPlayer.ended) {
-            // Ensure we have a valid source
             ensureAudioReady(lastAudioBlob);
             audioPlayer.play().catch(function(e) {
                 console.warn('[VoxBox] Playback failed:', e);
@@ -1398,22 +1407,19 @@ enum VoxBoxHTML {
         }
     });
 
-    // ── Player: Instant Replay (redesigned — always works) ──
+    // ── Player: Instant Replay ──
     btnReplay.addEventListener('click', function() {
         if (!lastAudioBlob) return;
 
-        // Always recreate a fresh blob URL for most reliable replay
         var url = createPlaybackURL(lastAudioBlob);
         audioPlayer.src = url;
         audioPlayer.currentTime = 0;
         playerProgress.value = 0;
         playerTimesInline.textContent = '00:00 / ' + formatTime(audioPlayer.duration || 0);
 
-        // Play immediately — the audio element will handle loading
         var playPromise = audioPlayer.play();
         if (playPromise !== undefined) {
             playPromise.catch(function(e) {
-                // If play() rejects (e.g., not enough data yet), wait for canplay
                 console.warn('[VoxBox] Replay play() rejected, waiting for canplay:', e.message);
                 audioPlayer.load();
                 audioPlayer.oncanplay = function() {
@@ -1434,6 +1440,11 @@ enum VoxBoxHTML {
         var timesteps = parseInt(timestepsSlider.value);
         var voice = voiceSelect.value;
         var voiceMode = voiceModeSelect.value;
+
+        // Strip custom prefix if present
+        if (voice && voice.indexOf('__custom__') === 0) {
+            voice = '';
+        }
 
         var body = {
             model: 'voxcpm2',
@@ -1510,7 +1521,6 @@ enum VoxBoxHTML {
         if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.voxbox) {
             window.webkit.messageHandlers.voxbox.postMessage({type: 'saveAudio'});
         } else {
-            // Fallback: download in browser
             var url = URL.createObjectURL(lastAudioBlob);
             var a = document.createElement('a');
             a.href = url;
@@ -1537,8 +1547,8 @@ enum VoxBoxHTML {
     applyL10n();
     updateCharCount();
     textInput.focus();
+    loadCustomVoices();
     loadVoices();
-    loadVoiceTemplates();
 
     console.log('[VoxBox] Native frontend ready · Port ' + SERVER_PORT + ' · ' + (IS_CHINESE ? '中文' : 'English'));
 })();
