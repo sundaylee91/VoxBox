@@ -70,10 +70,9 @@ struct WebView: NSViewRepresentable {
     // MARK: - JS Injection
 
     private func createCaptureScript() -> String {
-        // Read language for JS strings
         let zh = LocalizationManager.shared.isChinese
-        let jsAutoSavedToast = zh ? "🎵 已自动保存" : "🎵 Auto-saved"
-        let jsOpenFolder = zh ? "📂" : "📂"
+        let toastMsg = zh ? "🎵 已自动保存" : "🎵 Auto-saved"
+        let openLabel = "📂"
 
         return """
 (function() {
@@ -126,13 +125,13 @@ struct WebView: NSViewRepresentable {
             'border-radius:8px;font-size:11px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;' +
             'box-shadow:0 3px 16px rgba(0,0,0,0.25);pointer-events:auto;max-width:400px;' +
             'border:1px solid rgba(255,255,255,0.07);line-height:1.4;">' +
-            '<span style="white-space:nowrap;font-weight:500;">\\(jsAutoSavedToast)</span>' +
+            '<span style="white-space:nowrap;font-weight:500;">\(toastMsg)</span>' +
             '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#94a3b8;">· ' +
                 escapeHTML(displayText) +
             '</span>' +
-            '<button id="voxbox-notif-open" title="\\(jsOpenFolder)" style="padding:2px 5px;background:rgba(255,255,255,0.08);color:#e2e8f0;border:1px solid rgba(255,255,255,0.1);' +
+            '<button id="voxbox-notif-open" title="\(openLabel)" style="padding:2px 5px;background:rgba(255,255,255,0.08);color:#e2e8f0;border:1px solid rgba(255,255,255,0.1);' +
                 'border-radius:5px;cursor:pointer;font-size:12px;line-height:1;transition:background 0.15s;">' +
-                '\\(jsOpenFolder)' +
+                '\(openLabel)' +
             '</button>' +
             '<button id="voxbox-notif-close" style="padding:1px 3px;background:transparent;color:#94a3b8;' +
                 'border:none;cursor:pointer;font-size:13px;line-height:1;transition:color 0.15s;">' +
