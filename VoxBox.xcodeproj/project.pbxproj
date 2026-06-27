@@ -17,6 +17,7 @@
 		A100000130 /* LaunchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000130; };
 		A100000131 /* LoadingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000131; };
 		A100000132 /* ErrorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000132; };
+		A100000133 /* LocalizationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000133; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -31,6 +32,7 @@
 		A200000130 /* LaunchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchView.swift; sourceTree = "<group>"; };
 		A200000131 /* LoadingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadingView.swift; sourceTree = "<group>"; };
 		A200000132 /* ErrorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorView.swift; sourceTree = "<group>"; };
+		A200000133 /* LocalizationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizationManager.swift; sourceTree = "<group>"; };
 		A200000140 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A200000141 /* VoxBox.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = VoxBox.entitlements; sourceTree = "<group>"; };
 		A200000150 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -50,6 +52,7 @@
 			children = (
 				A200000123 /* VoxBoxApp.swift */,
 				A200000124 /* ContentView.swift */,
+				A200000133 /* LocalizationManager.swift */,
 				A200000125 /* ServerManager.swift */,
 				A200000126 /* MenuBarController.swift */,
 				A200000127 /* WebView.swift */,
@@ -136,6 +139,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A100000123 /* VoxBoxApp.swift in Sources */,
+				A100000133 /* LocalizationManager.swift in Sources */,
 				A100000124 /* ContentView.swift in Sources */,
 				A100000125 /* ServerManager.swift in Sources */,
 				A100000126 /* MenuBarController.swift in Sources */,
