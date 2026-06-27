@@ -58,8 +58,6 @@ final class LocalizationManager: ObservableObject {
 
 // MARK: - Localized Strings
 
-/// All user-facing strings. Reads language from LocalizationManager.shared.
-/// Views MUST observe LocalizationManager to re-render on language change.
 @MainActor
 struct L10n {
     private static var zh: Bool { LocalizationManager.shared.isChinese }
@@ -198,15 +196,24 @@ struct L10n {
     static var status: String { zh ? "状态" : "Status" }
     static var port: String { zh ? "端口" : "Port" }
 
-    // MARK: - Auto-save & Recordings Folder
+    // MARK: - Output Folder (changed from "VoxBox Recordings" to "VoxBox Output")
     static var autoSavedTitle: String { zh ? "🎵 已自动保存" : "🎵 Auto-saved" }
     static var autoSavedToFolder: String {
-        zh ? "已保存至 VoxBox Recordings 文件夹" : "Saved to VoxBox Recordings folder"
+        zh ? "已保存至 VoxBox Output 文件夹" : "Saved to VoxBox Output folder"
     }
-    static var openRecordingsFolder: String { zh ? "📂 打开文件夹" : "📂 Open Folder" }
+    static var openOutputFolder: String { zh ? "📂 打开输出文件夹" : "📂 Open Output Folder" }
     static var saveAsButton: String { zh ? "💾 另存为…" : "💾 Save As…" }
-    static var openRecordingsFolderMenu: String {
-        zh ? "📂 打开录音文件夹" : "📂 Open Recordings Folder"
+    static var openOutputFolderMenu: String {
+        zh ? "📂 打开输出文件夹" : "📂 Open Output Folder"
+    }
+    static var outputFolderLabel: String { zh ? "输出文件夹" : "Output Folder" }
+    static var outputFolderDesc: String {
+        zh ? "生成的音频文件将自动保存到此文件夹" : "Generated audio files are auto-saved to this folder"
+    }
+    static var chooseFolder: String { zh ? "选择文件夹…" : "Choose Folder…" }
+    static var resetToDefault: String { zh ? "恢复默认" : "Reset to Default" }
+    static var defaultOutputPath: String {
+        zh ? "默认: ~/VoxBox Output" : "Default: ~/VoxBox Output"
     }
 
     // MARK: - JS Injected Strings (used in WebView JS)
@@ -216,7 +223,7 @@ struct L10n {
     static var jsDownloadHistory: String { zh ? "📥 历史" : "📥 History" }
     static var jsClose: String { zh ? "✕" : "✕" }
     static var jsClockTooltip: String {
-        zh ? "打开录音文件夹" : "Open Recordings Folder"
+        zh ? "打开输出文件夹" : "Open Output Folder"
     }
     static var jsAutoSavedToast: String {
         zh ? "🎵 已自动保存" : "🎵 Auto-saved"
