@@ -1,44 +1,308 @@
+//
+//  ServerManager.swift
+//  VoxBox
+//
+//  Manages the voxcpmane2 Python server lifecycle.
+//  Uses `uv` for package management to avoid PEP 668 restrictions.
+//
+//  Chip-specific behavior:
+//    M1 / M1 Pro / M1 Max / M1 Ultra
+//      → Installs voxcpmane2==0.1.3b1 (beta) with --split-base-lm.
+//        Reason: M1 ANE cannot load the full BaseLM package;
+//        --split-base-lm downloads two smaller split packages instead.
+//    M2 / M3 / M4 and later
+//      → Installs latest stable voxcpmane2 (no --split-base-lm).
+//
+//  Safety net for all chips:
+//    If stderr contains "ANE model load has failed" at runtime,
+//    the server stops and suggests switching to the beta version.
+//
+
 import Foundation
-import Combine
 import AppKit
 
-class ServerManager: ObservableObject {
+// MARK: - Server State
+
+enum ServerStatus: Equatable {
+    case stopped
+    case starting
+    case running(port: Int)
+    case error(String)
+}
+
+// MARK: - Log Entry
+
+struct LogEntry: Identifiable, Equatable {
+    let id = UUID()
+    let timestamp: Date
+    let message: String
+}
+
+// MARK: - Server Manager
+
+@MainActor
+final class ServerManager: ObservableObject {
+
     @Published var status: ServerStatus = .stopped
-    @Published var port: Int = 8650
-    @Published var downloadProgress: Double = 0.0
-    @Published var logOutput: String = ""
-    
-    enum ServerStatus: Equatable {
-        case stopped
-        case starting
-        case downloading(progress: Double)
-        case running
-        case error(String)
-    }
-    
+    @Published var logs: [LogEntry] = []
+
     private var process: Process?
-    private var outputPipe: Pipe?
-    private var errorPipe: Pipe?
-    private var healthTimer: Timer?
-    private var outputBuffer: String = ""
-    private let healthCheckInterval: TimeInterval = 2.0
-    private let healthCheckTimeout: TimeInterval = 300.0
-    private let healthCheckPath = "/docs"
-    
-    // MARK: - Paths
-    
-    /// uv package manager — either system-installed or bootstrapped by us.
-    private var uvPath: String {
-        return ServerManager.findUv() ?? "\(NSHomeDirectory())/.local/bin/uv"
+    private var stdoutPipe: Pipe?
+    private var stderrPipe: Pipe?
+
+    private let appSupportDir: URL
+    private let uvPath: String
+    private let isM1Series: Bool
+    private let isAppleSilicon: Bool
+
+    // MARK: - Init
+
+    init() {
+        let base = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first!.appendingPathComponent("VoxBox")
+
+        self.appSupportDir = base
+        self.uvPath = ServerManager.findUv()
+        self.isAppleSilicon = ServerManager.isAppleSiliconMac()
+        self.isM1Series = ServerManager.isM1Series()
+
+        try? FileManager.default.createDirectory(
+            at: base,
+            withIntermediateDirectories: true
+        )
+
+        if isM1Series {
+            appendLog("🍎 M1-series chip detected — will use beta + --split-base-lm")
+        } else if isAppleSilicon {
+            appendLog("🍎 Apple Silicon (M2+) detected — using stable release")
+        } else {
+            appendLog("🖥 Intel Mac detected")
+        }
     }
-    
-    /// voxcpmane2-server binary installed by `uv tool install`.
-    private var serverBinary: String {
-        return "\(NSHomeDirectory())/.local/bin/voxcpmane2-server"
+
+    // MARK: - Public API
+
+    func start() {
+        guard case .stopped = status else { return }
+        status = .starting
+        logs.removeAll()
+
+        Task.detached(priority: .userInitiated) {
+            await self.performStart()
+        }
     }
-    
-    /// Whether this Mac uses Apple Silicon (arm64).
-    private var isAppleSilicon: Bool {
+
+    func stop() {
+        if let proc = process, proc.isRunning {
+            proc.terminate()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                if proc.isRunning {
+                    proc.forceTerminate()
+                }
+            }
+        }
+        process = nil
+        status = .stopped
+        appendLog("⏹ Server stopped.")
+    }
+
+    // MARK: - Start Sequence
+
+    private func performStart() async {
+        // ── 1. Locate or install `uv` ──
+        let uv: String
+        if !uvPath.isEmpty {
+            uv = uvPath
+            appendLog("✅ Found uv at \(uv)")
+        } else {
+            appendLog("📦 Installing uv package manager…")
+            do {
+                uv = try await installUv()
+                appendLog("✅ uv installed at \(uv)")
+            } catch {
+                await setError("Failed to install uv: \(error.localizedDescription)")
+                return
+            }
+        }
+
+        // ── 2. Find system Python (3.10–3.12) ──
+        guard let pythonPath = ServerManager.findSystemPython() else {
+            await setError("Python >=3.10,<3.13 not found. Install via Homebrew: brew install python@3.12")
+            return
+        }
+        appendLog("✅ Found \(pythonPath)")
+
+        // ── 3. Install voxcpmane2 ──
+        //    M1 series → beta with --split-base-lm
+        //    M2+       → latest stable
+        let installArgs: [String]
+        if isM1Series {
+            appendLog("🍎 M1-series: installing voxcpmane2==0.1.3b1 for --split-base-lm")
+            installArgs = [
+                "tool", "install",
+                "--python", pythonPath,
+                "--prerelease", "allow",
+                "-U",
+                "voxcpmane2==0.1.3b1",
+            ]
+        } else {
+            installArgs = [
+                "tool", "install",
+                "--python", pythonPath,
+                "-U",
+                "voxcpmane2",
+            ]
+        }
+
+        do {
+            appendLog("📦 Running: uv \(installArgs.joined(separator: " "))")
+            let output = try await runAsync(uv, args: installArgs)
+            appendLog(output)
+        } catch {
+            await setError("uv tool install failed: \(error.localizedDescription)")
+            return
+        }
+
+        // ── 4. Locate voxcpmane2-server ──
+        let serverBinary = "\(NSHomeDirectory())/.local/bin/voxcpmane2-server"
+        guard FileManager.default.fileExists(atPath: serverBinary) else {
+            await setError("voxcpmane2-server not found at \(serverBinary)")
+            return
+        }
+        appendLog("✅ voxcpmane2-server: \(serverBinary)")
+
+        // ── 5. Find available port ──
+        guard let port = findAvailablePort() else {
+            await setError("No available port found.")
+            return
+        }
+        appendLog("🔌 Using port \(port)")
+
+        // ── 6. Build launch arguments ──
+        var serverArgs = [
+            "--host", "127.0.0.1",
+            "--port", "\(port)",
+        ]
+        if isM1Series {
+            serverArgs.append("--split-base-lm")
+            appendLog("⚡ Launching with --split-base-lm (M1-series)")
+        }
+
+        // ── 7. Launch server ──
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: serverBinary)
+        proc.arguments = serverArgs
+        proc.environment = [
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:\(NSHomeDirectory())/.local/bin",
+            "HOME": NSHomeDirectory(),
+        ]
+
+        let outPipe = Pipe()
+        let errPipe = Pipe()
+        proc.standardOutput = outPipe
+        proc.standardError = errPipe
+
+        // Stderr accumulator for ANE error safety net
+        let stderrAccumulator = StderrAccumulator { [weak self] fullStderr in
+            Task { @MainActor in
+                self?.handleANEError(stderr: fullStderr)
+            }
+        }
+
+        self.process = proc
+        self.stdoutPipe = outPipe
+        self.stderrPipe = errPipe
+
+        outPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            guard !data.isEmpty, let self = self else { return }
+            if let text = String(data: data, encoding: .utf8), !text.isEmpty {
+                Task { @MainActor in self.appendLog(text) }
+            }
+        }
+        errPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            guard !data.isEmpty, let self = self else { return }
+            if let text = String(data: data, encoding: .utf8), !text.isEmpty {
+                Task { @MainActor in
+                    self.appendLog("[stderr] \(text)")
+                    stderrAccumulator.append(text)
+                }
+            }
+        }
+
+        do {
+            try proc.run()
+            await setRunning(port: port)
+            appendLog("🟢 Server started (PID: \(proc.processIdentifier))")
+
+            Task.detached {
+                proc.waitUntilExit()
+                let exitCode = proc.terminationStatus
+                Task { @MainActor in
+                    if case .running = self.status {
+                        self.appendLog("⚠ Server exited with code \(exitCode)")
+                        if exitCode != 0 {
+                            self.status = .error("Server exited unexpectedly (code \(exitCode))")
+                        }
+                    }
+                }
+            }
+        } catch {
+            await setError(error.localizedDescription)
+        }
+    }
+
+    // MARK: - ANE Error Safety Net
+
+    /// If an ANE compilation error is detected in stderr at runtime,
+    /// stop the server and suggest the beta workaround.
+    private func handleANEError(stderr: String) {
+        let anePatterns = [
+            "ANE model load has failed",
+            "re-compile the E5 bundle",
+            "ANE compilation error",
+            "on-device compiled macho",
+        ]
+
+        guard anePatterns.contains(where: { stderr.contains($0) }) else { return }
+
+        appendLog("⚠️ ANE compilation error detected!")
+
+        // Stop the process
+        if let proc = process, proc.isRunning {
+            proc.terminate()
+            Thread.sleep(forTimeInterval: 1)
+            if proc.isRunning {
+                proc.forceTerminate()
+            }
+        }
+        process = nil
+
+        let message = """
+        ANE model load has failed for on-device compiled macho.
+        Must re-compile the E5 bundle.
+
+        This is a known issue with the full BaseLM package on some Apple Silicon Macs.
+        The workaround is to use the beta version with --split-base-lm:
+
+          uv tool uninstall voxcpmane2
+          uv tool install --python '>=3.10,<3.13' --prerelease allow -U voxcpmane2==0.1.3b1
+          voxcpmane2-server --split-base-lm --host 127.0.0.1 --port XXXX
+
+        See: https://github.com/0seba/VoxCPMANE#m1-baselm-load-workaround
+        """
+
+        status = .error(message)
+        appendLog(message)
+    }
+
+    // MARK: - Chip Detection
+
+    /// All Apple Silicon (M1, M2, M3, M4, ...) report "arm64" from uname.
+    private static func isAppleSiliconMac() -> Bool {
         var info = utsname()
         uname(&info)
         let machine = withUnsafePointer(to: &info.machine) {
@@ -48,53 +312,23 @@ class ServerManager: ObservableObject {
         }
         return machine.hasPrefix("arm64") || machine.hasPrefix("aarch64")
     }
-    
-    // MARK: - Python Detection
-    
-    /// Find a system Python 3.10–3.12.
-    func findSystemPython() -> String? {
-        let candidates = [
-            "/opt/homebrew/bin/python3.12", "/opt/homebrew/bin/python3.11", "/opt/homebrew/bin/python3.10",
-            "/usr/local/bin/python3.12", "/usr/local/bin/python3.11", "/usr/local/bin/python3.10",
-            "/usr/bin/python3",
-            "\(NSHomeDirectory())/.pyenv/shims/python3",
-            "/opt/homebrew/anaconda3/bin/python3", "/usr/local/anaconda3/bin/python3"
-        ]
-        for candidate in candidates {
-            let url = URL(fileURLWithPath: candidate)
-            guard FileManager.default.isExecutableFile(atPath: url.path) else { continue }
-            if let version = getPythonVersion(at: url.path), version >= (3, 10) && version < (3, 13) {
-                log("✅ Found Python \(version.0).\(version.1) at \(candidate)")
-                return candidate
-            }
-        }
-        return nil
+
+    /// Returns true for M1, M1 Pro, M1 Max, M1 Ultra.
+    /// Uses sysctl machdep.cpu.brand_string (e.g. "Apple M1 Pro").
+    private static func isM1Series() -> Bool {
+        var size = 0
+        sysctlbyname("machdep.cpu.brand_string", nil, &size, nil, 0)
+        guard size > 0 else { return false }
+        var chars = [CChar](repeating: 0, count: size)
+        sysctlbyname("machdep.cpu.brand_string", &chars, &size, nil, 0)
+        let brand = String(cString: chars)
+        // Matches "Apple M1", "Apple M1 Pro", "Apple M1 Max", "Apple M1 Ultra"
+        return brand.hasPrefix("Apple M1")
     }
-    
-    private func getPythonVersion(at path: String) -> (Int, Int)? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: path)
-        process.arguments = ["--version"]
-        let pipe = Pipe()
-        process.standardOutput = pipe; process.standardError = pipe
-        do {
-            try process.run(); process.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8) ?? ""
-            let pattern = /Python (\d+)\.(\d+)/
-            if let match = output.firstMatch(of: pattern) {
-                return (Int(match.1) ?? 0, Int(match.2) ?? 0)
-            }
-        } catch {
-            log("⚠️ Failed to check Python version at \(path): \(error)")
-        }
-        return nil
-    }
-    
-    // MARK: - uv Bootstrapping
-    
-    /// Locate `uv` on the system.
-    private static func findUv() -> String? {
+
+    // MARK: - Install uv
+
+    private static func findUv() -> String {
         let candidates = [
             "/opt/homebrew/bin/uv",
             "/usr/local/bin/uv",
@@ -106,410 +340,188 @@ class ServerManager: ObservableObject {
                 return path
             }
         }
-        // Fallback: ask the shell
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/bin/sh")
-        task.arguments = ["-c", "command -v uv"]
-        let pipe = Pipe()
-        task.standardOutput = pipe; task.standardError = FileHandle.nullDevice
-        do {
-            try task.run(); task.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let found = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let f = found, !f.isEmpty, FileManager.default.fileExists(atPath: f) {
-                return f
-            }
-        } catch {}
-        return nil
+        let which = try? runSync("/bin/sh", args: ["-c", "command -v uv"])
+        if let p = which?.trimmingCharacters(in: .whitespacesAndNewlines), !p.isEmpty {
+            return p
+        }
+        return ""
     }
-    
-    /// Install `uv` via the official curl|sh script.
-    private func installUv() -> Bool {
-        log("📦 Installing uv package manager (astral.sh)…")
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/bin/bash")
-        task.arguments = ["-c", "curl -LsSf https://astral.sh/uv/install.sh | sh"]
-        task.environment = [
+
+    private func installUv() async throws -> String {
+        let scriptURL = "https://astral.sh/uv/install.sh"
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = ["-c", "curl -LsSf \(scriptURL) | sh"]
+        process.environment = [
             "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:\(NSHomeDirectory())/.local/bin"
         ]
+
         let pipe = Pipe()
-        task.standardOutput = pipe; task.standardError = pipe
-        do {
-            try task.run(); task.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8) ?? ""
-            log(output)
-            if task.terminationStatus == 0 {
-                let uvBin = "\(NSHomeDirectory())/.local/bin/uv"
-                if FileManager.default.fileExists(atPath: uvBin) {
-                    log("✅ uv installed at \(uvBin)")
-                    return true
-                }
-            }
-            log("❌ uv install script exited with code \(task.terminationStatus)")
-            return false
-        } catch {
-            log("❌ Failed to install uv: \(error.localizedDescription)")
-            return false
+        process.standardOutput = pipe
+        process.standardError = pipe
+
+        try process.run()
+        process.waitUntilExit()
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(data: data, encoding: .utf8) ?? ""
+        appendLog(output)
+
+        guard process.terminationStatus == 0 else {
+            throw ServerError.uvInstallFailed(output)
         }
+
+        let uvPath = "\(NSHomeDirectory())/.local/bin/uv"
+        guard FileManager.default.fileExists(atPath: uvPath) else {
+            throw ServerError.uvNotFoundAfterInstall
+        }
+        return uvPath
     }
-    
-    // MARK: - voxcpmane2 Installation (via uv)
-    
-    /// Install or upgrade voxcpmane2 via `uv tool install`.
-    /// - On Apple Silicon: installs 0.1.3b1 (required for --split-base-lm).
-    /// - On Intel: installs latest stable.
-    /// - Returns: true on success.
-    func installVoxcpmane2(systemPython: String) -> Bool {
-        // Ensure uv is available
-        var uv = ServerManager.findUv()
-        if uv == nil {
-            guard installUv() else { return false }
-            uv = ServerManager.findUv()
-        }
-        guard let uv = uv else {
-            log("❌ uv not found after installation attempt")
-            return false
-        }
-        
-        // Build install arguments
-        var args = ["tool", "install", "--python", systemPython]
-        
-        if isAppleSilicon {
-            log("🍎 Apple Silicon detected — installing beta 0.1.3b1 for --split-base-lm support")
-            args.append(contentsOf: ["--prerelease", "allow", "-U", "voxcpmane2==0.1.3b1"])
-        } else {
-            args.append(contentsOf: ["-U", "voxcpmane2"])
-        }
-        
-        log("📦 Running: uv \(args.joined(separator: " "))")
-        
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: uv)
-        task.arguments = args
-        task.environment = [
-            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:\(NSHomeDirectory())/.local/bin",
-            "HOME": NSHomeDirectory()
-        ]
-        
-        let pipe = Pipe()
-        task.standardOutput = pipe; task.standardError = pipe
-        
-        do {
-            try task.run(); task.waitUntilExit()
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let output = String(data: data, encoding: .utf8) ?? ""
-            log(output)
-            
-            if task.terminationStatus == 0 {
-                // Verify the binary exists
-                if FileManager.default.fileExists(atPath: serverBinary) {
-                    log("✅ voxcpmane2-server installed at \(serverBinary)")
-                    return true
-                } else {
-                    log("⚠️ uv tool install succeeded but \(serverBinary) not found")
-                    // Try to locate it
-                    let found = findUvToolBinary("voxcpmane2-server")
-                    if found != nil {
-                        log("✅ Found voxcpmane2-server at \(found!)")
-                        return true
-                    }
-                    log("❌ Cannot locate voxcpmane2-server after installation")
-                    return false
-                }
-            } else {
-                log("❌ uv tool install exited with code \(task.terminationStatus)")
-                return false
-            }
-        } catch {
-            log("❌ uv tool install failed: \(error.localizedDescription)")
-            return false
-        }
-    }
-    
-    /// Find a binary installed by `uv tool install`.
-    private func findUvToolBinary(_ name: String) -> String? {
-        // uv tools are typically installed to ~/.local/bin
+
+    // MARK: - Helpers
+
+    private static func findSystemPython() -> String? {
         let candidates = [
-            "\(NSHomeDirectory())/.local/bin/\(name)",
-            "\(NSHomeDirectory())/.cargo/bin/\(name)",
+            "/opt/homebrew/bin/python3.12",
+            "/usr/local/bin/python3.12",
+            "/opt/homebrew/bin/python3.11",
+            "/usr/local/bin/python3.11",
+            "/opt/homebrew/bin/python3.10",
+            "/usr/local/bin/python3.10",
         ]
         for path in candidates {
-            if FileManager.default.fileExists(atPath: path) { return path }
+            if FileManager.default.fileExists(atPath: path) {
+                return path
+            }
         }
-        // Search common uv tool directories
-        let uvToolDirs = [
-            "\(NSHomeDirectory())/.local/share/uv/tools",
-        ]
-        for dir in uvToolDirs {
-            guard let contents = try? FileManager.default.contentsOfDirectory(atPath: dir) else { continue }
-            for item in contents {
-                let binPath = "\(dir)/\(item)/bin/\(name)"
-                if FileManager.default.fileExists(atPath: binPath) { return binPath }
+        let which = try? runSync("/bin/sh", args: ["-c", "command -v python3"])
+        if let p = which?.trimmingCharacters(in: .whitespacesAndNewlines), !p.isEmpty {
+            let ver = (try? runSync(p, args: ["--version"])) ?? ""
+            if ver.contains("3.10") || ver.contains("3.11") || ver.contains("3.12") {
+                return p
             }
         }
         return nil
     }
-    
-    // MARK: - Server Lifecycle
-    
-    func start() {
-        guard status == .stopped || status == .error("") else { return }
-        status = .starting
-        log("🚀 Starting VoxBox server…")
-        
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self = self else { return }
-            
-            // 1. Find system Python
-            guard let systemPython = self.findSystemPython() else {
-                DispatchQueue.main.async {
-                    self.status = .error(
-                        "Python 3.10–3.12 not found.\n\nInstall via Homebrew:\n  brew install python@3.12"
-                    )
+
+    private func findAvailablePort() -> Int? {
+        for port in 1024...65535 {
+            let sock = socket(AF_INET, SOCK_STREAM, 0)
+            guard sock >= 0 else { continue }
+            defer { close(sock) }
+
+            var addr = sockaddr_in()
+            addr.sin_family = sa_family_t(AF_INET)
+            addr.sin_port = UInt16(port).bigEndian
+            addr.sin_addr.s_addr = in_addr_t(bigEndian: 0x7f000001)
+
+            let addrLen = socklen_t(MemoryLayout<sockaddr_in>.size)
+            let result = withUnsafePointer(to: &addr) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    bind(sock, $0, addrLen)
                 }
+            }
+            if result == 0 {
+                return port
+            }
+        }
+        return nil
+    }
+
+    // MARK: - Status updates
+
+    private func setRunning(port: Int) {
+        status = .running(port: port)
+    }
+
+    private func setError(_ message: String) {
+        status = .error(message)
+    }
+
+    private func appendLog(_ message: String) {
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        logs.append(LogEntry(timestamp: Date(), message: trimmed))
+        print("[VoxBox] \(trimmed)")
+    }
+}
+
+// MARK: - Stderr Accumulator
+
+private final class StderrAccumulator {
+    private var buffer = ""
+    private let callback: (String) -> Void
+    private var fired = false
+
+    private let triggerPatterns = [
+        "ANE model load has failed",
+        "re-compile the E5 bundle",
+    ]
+
+    init(callback: @escaping (String) -> Void) {
+        self.callback = callback
+    }
+
+    func append(_ text: String) {
+        guard !fired else { return }
+        buffer += text
+        for pattern in triggerPatterns {
+            if buffer.contains(pattern) {
+                fired = true
+                callback(buffer)
                 return
             }
-            
-            // 2. Install/upgrade voxcpmane2 via uv tool install
-            guard self.installVoxcpmane2(systemPython: systemPython) else {
-                DispatchQueue.main.async {
-                    self.status = .error(
-                        "Failed to install voxcpmane2.\n\nCheck the logs for details and ensure you have an internet connection."
-                    )
-                }
-                return
-            }
-            
-            // 3. Pick a free port
-            let port = self.findAvailablePort(
-                starting: UserDefaults.standard.integer(forKey: "preferredPort")
-            )
-            DispatchQueue.main.async { self.port = port }
-            
-            // 4. Launch!
-            self.launchServer(port: port)
         }
     }
-    
-    private func launchServer(port: Int) {
-        // Ensure the server binary exists
-        var binary = serverBinary
-        if !FileManager.default.fileExists(atPath: binary) {
-            if let found = findUvToolBinary("voxcpmane2-server") {
-                binary = found
-            } else {
-                log("❌ voxcpmane2-server not found")
-                DispatchQueue.main.async { self.status = .error("voxcpmane2-server not found") }
-                return
-            }
-        }
-        
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: binary)
-        var args = ["--host", "127.0.0.1", "--port", "\(port)"]
-        
-        if let modelDir = UserDefaults.standard.string(forKey: "modelDirectory"), !modelDir.isEmpty {
-            args.append(contentsOf: ["--model-dir", modelDir])
-        }
-        
-        // --split-base-lm is only available in voxcpmane2 0.1.3b1 (pre-release)
-        if UserDefaults.standard.bool(forKey: "splitBaseLM") {
-            if isAppleSilicon {
-                args.append("--split-base-lm")
-                log("⚡ --split-base-lm enabled (Apple Silicon)")
-            } else {
-                log("⚠️ --split-base-lm is only supported on Apple Silicon, skipping")
-            }
-        }
-        
-        process.arguments = args
-        process.environment = [
-            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:\(NSHomeDirectory())/.local/bin",
-            "HOME": NSHomeDirectory()
-        ]
-        
-        let outputPipe = Pipe(); let errorPipe = Pipe()
-        process.standardOutput = outputPipe; process.standardError = errorPipe
-        self.outputPipe = outputPipe; self.errorPipe = errorPipe; self.process = process
-        
-        setupOutputMonitoring(outputPipe: outputPipe)
-        setupOutputMonitoring(outputPipe: errorPipe)
-        
-        process.terminationHandler = { [weak self] proc in
-            DispatchQueue.main.async {
-                guard let self = self else { return }
-                self.healthTimer?.invalidate(); self.healthTimer = nil
-                if proc.terminationStatus != 0 && self.status != .stopped {
-                    self.status = .error(
-                        "Server exited unexpectedly (code \(proc.terminationStatus)).\nCheck logs for details."
-                    )
-                } else if self.status != .stopped {
-                    self.status = .stopped
-                }
-            }
-        }
-        
-        do {
-            try process.run()
-            log("🟢 Server process started (PID: \(process.processIdentifier))")
-            DispatchQueue.main.async { [weak self] in self?.startHealthCheck() }
-        } catch {
-            log("❌ Failed to launch server: \(error)")
-            DispatchQueue.main.async {
-                self.status = .error("Failed to launch server:\n\(error.localizedDescription)")
-            }
-        }
+}
+
+// MARK: - Shell helpers
+
+private func runSync(_ executable: String, args: [String]) throws -> String {
+    let proc = Process()
+    proc.executableURL = URL(fileURLWithPath: executable)
+    proc.arguments = args
+    let pipe = Pipe()
+    proc.standardOutput = pipe
+    proc.standardError = pipe
+    try proc.run()
+    proc.waitUntilExit()
+    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    return String(data: data, encoding: .utf8) ?? ""
+}
+
+private func runAsync(_ executable: String, args: [String]) async throws -> String {
+    let proc = Process()
+    proc.executableURL = URL(fileURLWithPath: executable)
+    proc.arguments = args
+    let pipe = Pipe()
+    proc.standardOutput = pipe
+    proc.standardError = pipe
+    try proc.run()
+    proc.waitUntilExit()
+    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    let output = String(data: data, encoding: .utf8) ?? ""
+    if proc.terminationStatus != 0 {
+        throw ServerError.commandFailed(output)
     }
-    
-    // MARK: - Graceful Shutdown (with force-kill fallback)
-    
-    /// Gracefully stops the server: SIGTERM → wait 5s → SIGINT → wait 3s → SIGKILL
-    func stop() {
-        log("🛑 Stopping server…")
-        healthTimer?.invalidate()
-        healthTimer = nil
-        
-        guard let process = process, process.isRunning else {
-            status = .stopped
-            return
+    return output
+}
+
+// MARK: - Errors
+
+enum ServerError: LocalizedError {
+    case uvInstallFailed(String)
+    case uvNotFoundAfterInstall
+    case commandFailed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .uvInstallFailed(let msg):
+            return "Failed to install uv: \(msg)"
+        case .uvNotFoundAfterInstall:
+            return "uv was installed but not found at expected path"
+        case .commandFailed(let msg):
+            return "Command failed: \(msg)"
         }
-        
-        let pid = process.processIdentifier
-        log("📤 Sending SIGTERM to PID \(pid)…")
-        process.terminate()  // SIGTERM
-        
-        // After 5 seconds, if still running, escalate to SIGINT (interrupt)
-        DispatchQueue.global().asyncAfter(deadline: .now() + 5) { [weak self] in
-            guard let self = self, let proc = self.process, proc.isRunning else { return }
-            log("⏳ Process still alive, sending SIGINT (interrupt)…")
-            proc.interrupt()  // SIGINT
-            
-            // After another 3 seconds, if still running, force-kill with SIGKILL
-            DispatchQueue.global().asyncAfter(deadline: .now() + 3) { [weak self] in
-                guard let self = self, let proc = self.process, proc.isRunning else { return }
-                let stubbornPid = proc.processIdentifier
-                log("💀 Force-killing PID \(stubbornPid) with SIGKILL…")
-                Darwin.kill(stubbornPid, SIGKILL)
-            }
-        }
-        
-        self.process = nil
-        status = .stopped
-        log("✅ Server stopped")
-    }
-    
-    func restart() {
-        stop()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
-            self?.start()
-        }
-    }
-    
-    // MARK: - Health Check
-    
-    private func startHealthCheck() {
-        let startTime = Date()
-        healthTimer = Timer.scheduledTimer(withTimeInterval: healthCheckInterval, repeats: true) { [weak self] timer in
-            guard let self = self else { timer.invalidate(); return }
-            if Date().timeIntervalSince(startTime) > self.healthCheckTimeout {
-                timer.invalidate()
-                DispatchQueue.main.async {
-                    if case .starting = self.status {
-                        self.status = .error("Server took too long to start. Check logs for errors.")
-                    }
-                }
-                return
-            }
-            self.checkHealth()
-        }
-    }
-    
-    private func checkHealth() {
-        guard let url = URL(string: "http://127.0.0.1:\(port)\(healthCheckPath)") else { return }
-        var request = URLRequest(url: url); request.timeoutInterval = 5
-        URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
-            DispatchQueue.main.async {
-                guard let self = self else { return }
-                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
-                    if case .starting = self.status {
-                        self.status = .running
-                        self.healthTimer?.invalidate()
-                        self.healthTimer = nil
-                    }
-                }
-            }
-        }.resume()
-    }
-    
-    // MARK: - Output Monitoring
-    
-    private func setupOutputMonitoring(outputPipe: Pipe) {
-        outputPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            guard let self = self, let output = String(data: handle.availableData, encoding: .utf8), !output.isEmpty else { return }
-            DispatchQueue.main.async {
-                self.outputBuffer += output
-                self.logOutput = String(self.outputBuffer.suffix(10000))
-                self.parseProgress(from: output)
-            }
-        }
-    }
-    
-    private func parseProgress(from line: String) {
-        let pattern = /(\d+)%/
-        if let match = line.firstMatch(of: pattern), let percent = Int(match.1) {
-            let progress = Double(percent) / 100.0
-            DispatchQueue.main.async {
-                if case .starting = self.status { self.status = .downloading(progress: progress) }
-                else if case .downloading = self.status { self.status = .downloading(progress: progress) }
-                self.downloadProgress = progress
-            }
-        }
-    }
-    
-    // MARK: - Port Utilities
-    
-    private func findAvailablePort(starting port: Int) -> Int {
-        var port = max(port, 1024)
-        for _ in 0..<100 { if isPortAvailable(port: port) { return port }; port += 1 }
-        return 8650
-    }
-    
-    private func isPortAvailable(port: Int) -> Bool {
-        let socket = Darwin.socket(AF_INET, SOCK_STREAM, 0)
-        guard socket >= 0 else { return false }
-        defer { Darwin.close(socket) }
-        var addr = sockaddr_in()
-        addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_port = in_port_t(port).bigEndian
-        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
-        return withUnsafePointer(to: &addr) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                Darwin.bind(socket, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
-            }
-        } == 0
-    }
-    
-    // MARK: - Logging
-    
-    private func log(_ message: String) {
-        let timestamp = ISO8601DateFormatter().string(from: Date())
-        let line = "[\(timestamp)] \(message)"
-        print(line)
-        DispatchQueue.main.async { [weak self] in
-            self?.outputBuffer += line + "\n"
-            self?.logOutput = String(self?.outputBuffer.suffix(10000) ?? "")
-        }
-    }
-    
-    // MARK: - Convenience
-    
-    func openInBrowser() {
-        if let url = URL(string: "http://127.0.0.1:\(port)") { NSWorkspace.shared.open(url) }
-    }
-    
-    func copyLogs() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(logOutput, forType: .string)
     }
 }
