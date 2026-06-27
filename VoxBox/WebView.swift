@@ -86,7 +86,9 @@ struct WebView: NSViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
-        webView.configuration.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
+        
+        // Record the URL we're about to load so updateNSView doesn't double-fire
+        context.coordinator.requestedURL = url
         
         let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
         webView.load(request)
@@ -95,23 +97,53 @@ struct WebView: NSViewRepresentable {
     
     func updateNSView(_ webView: WKWebView, context: Context) {
         context.coordinator.onAudioCaptured = onAudioCaptured
-        if webView.url != url {
-            webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10))
-        }
+        
+        // Only reload if the URL actually changed (prevents code 102: Frame load interrupted)
+        guard url != context.coordinator.requestedURL else { return }
+        context.coordinator.requestedURL = url
+        
+        // Also avoid reloading during an in-progress navigation
+        guard !context.coordinator.isLoading else { return }
+        
+        let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
+        webView.load(request)
     }
     
     class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
         var onAudioCaptured: ((Data) -> Void)?
+        var requestedURL: URL?
+        var isLoading = false
+        
+        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            isLoading = true
+        }
         
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            isLoading = false
             print("✅ WebView loaded: \(webView.url?.absoluteString ?? "unknown")")
         }
+        
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            isLoading = false
             print("❌ WebView failed: \(error.localizedDescription)")
         }
+        
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            print("⚠️ WebView provisional load failed: \(error.localizedDescription)")
+            isLoading = false
+            let nsError = error as NSError
+            // code 102 = Frame load interrupted — typically from a double-load, not fatal
+            if nsError.domain == "WebKitErrorDomain" && nsError.code == 102 {
+                print("⚠️ WebView load interrupted (likely double-load), retrying...")
+                // Retry once if we haven't successfully loaded yet
+                if webView.url == nil, let url = requestedURL {
+                    let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
+                    webView.load(request)
+                }
+            } else {
+                print("⚠️ WebView provisional load failed: \(error.localizedDescription)")
+            }
         }
+        
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
             if navigationAction.targetFrame == nil, let url = navigationAction.request.url {
                 NSWorkspace.shared.open(url)
