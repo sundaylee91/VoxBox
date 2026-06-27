@@ -27,19 +27,31 @@ class ServerManager: ObservableObject {
     
     // MARK: - Paths
     
-    /// Dedicated virtual environment inside App Support — isolates us from system Python restrictions.
-    private var venvPath: String {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        return appSupport.appendingPathComponent("VoxBox/venv").path
+    /// uv package manager — either system-installed or bootstrapped by us.
+    private var uvPath: String {
+        return ServerManager.findUv() ?? "\(NSHomeDirectory())/.local/bin/uv"
     }
     
-    private var venvPython: String {
-        return (venvPath as NSString).appendingPathComponent("bin/python3")
+    /// voxcpmane2-server binary installed by `uv tool install`.
+    private var serverBinary: String {
+        return "\(NSHomeDirectory())/.local/bin/voxcpmane2-server"
+    }
+    
+    /// Whether this Mac uses Apple Silicon (arm64).
+    private var isAppleSilicon: Bool {
+        var info = utsname()
+        uname(&info)
+        let machine = withUnsafePointer(to: &info.machine) {
+            $0.withMemoryRebound(to: CChar.self, capacity: Int(_SYS_NAMELEN)) {
+                String(cString: $0)
+            }
+        }
+        return machine.hasPrefix("arm64") || machine.hasPrefix("aarch64")
     }
     
     // MARK: - Python Detection
     
-    /// Find a system Python 3.10–3.12 to bootstrap the venv.
+    /// Find a system Python 3.10–3.12.
     func findSystemPython() -> String? {
         let candidates = [
             "/opt/homebrew/bin/python3.12", "/opt/homebrew/bin/python3.11", "/opt/homebrew/bin/python3.10",
@@ -79,90 +91,164 @@ class ServerManager: ObservableObject {
         return nil
     }
     
-    // MARK: - Virtual Environment Setup
+    // MARK: - uv Bootstrapping
     
-    /// Ensure an isolated venv exists with voxcpmane2 installed.
-    /// Returns the venv's python3 path on success, nil on failure.
-    func setupVenv(systemPython: String) -> String? {
-        let fm = FileManager.default
-        let venvPythonPath = self.venvPython
-        
-        // ── 1. Create venv if missing ──────────────────────────────
-        if !fm.fileExists(atPath: venvPythonPath) {
-            log("🐍 Creating virtual environment at \(venvPath)…")
-            let create = Process()
-            create.executableURL = URL(fileURLWithPath: systemPython)
-            create.arguments = ["-m", "venv", venvPath]
-            let pipe = Pipe()
-            create.standardOutput = pipe; create.standardError = pipe
-            do {
-                try create.run(); create.waitUntilExit()
-                if create.terminationStatus != 0 {
-                    let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                    let err = String(data: data, encoding: .utf8) ?? "(no output)"
-                    log("❌ venv creation failed:\n\(err)")
-                    return nil
-                }
-                log("✅ Virtual environment created")
-            } catch {
-                log("❌ venv creation error: \(error.localizedDescription)")
-                return nil
+    /// Locate `uv` on the system.
+    private static func findUv() -> String? {
+        let candidates = [
+            "/opt/homebrew/bin/uv",
+            "/usr/local/bin/uv",
+            "\(NSHomeDirectory())/.local/bin/uv",
+            "\(NSHomeDirectory())/.cargo/bin/uv",
+        ]
+        for path in candidates {
+            if FileManager.default.fileExists(atPath: path) {
+                return path
             }
-        } else {
-            log("📁 Using existing venv at \(venvPath)")
         }
-        
-        // ── 2. Upgrade pip inside the venv ────────────────────────
-        log("📦 Upgrading pip in venv…")
-        let upgradePip = runPythonInVenv(args: ["-m", "pip", "install", "--upgrade", "pip", "--quiet"])
-        if !upgradePip.success {
-            log("⚠️ pip upgrade had issues (continuing anyway):\n\(upgradePip.output.prefix(500))")
-        }
-        
-        // ── 3. Check if voxcpmane2 is already installed ───────────
-        let check = runPythonInVenv(args: ["-c", "import voxcpmane; print('ok')"])
-        if check.success && check.output.contains("ok") {
-            log("✅ voxcpmane2 already installed in venv")
-            return venvPythonPath
-        }
-        
-        // ── 4. Install voxcpmane2 ─────────────────────────────────
-        log("📦 Installing voxcpmane2 in venv (this may take a minute)…")
-        let install = runPythonInVenv(args: ["-m", "pip", "install", "voxcpmane2"])
-        if install.success {
-            log("✅ voxcpmane2 installed successfully")
-            return venvPythonPath
-        }
-        
-        // ── 5. Fallback: try with --pre (pre-release) ─────────────
-        log("⚠️ Stable install failed, trying pre-release…")
-        let installPre = runPythonInVenv(args: ["-m", "pip", "install", "--pre", "voxcpmane2"])
-        if installPre.success {
-            log("✅ voxcpmane2 pre-release installed")
-            return venvPythonPath
-        }
-        
-        log("❌ All installation attempts failed:\n\(install.output.prefix(1000))")
+        // Fallback: ask the shell
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
+        task.arguments = ["-c", "command -v uv"]
+        let pipe = Pipe()
+        task.standardOutput = pipe; task.standardError = FileHandle.nullDevice
+        do {
+            try task.run(); task.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let found = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let f = found, !f.isEmpty, FileManager.default.fileExists(atPath: f) {
+                return f
+            }
+        } catch {}
         return nil
     }
     
-    /// Run a command using the venv's python3. Returns (success, combined stdout+stderr).
-    private func runPythonInVenv(args: [String]) -> (success: Bool, output: String) {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: venvPython)
-        process.arguments = args
-        // Merge stderr into stdout so we capture error details
+    /// Install `uv` via the official curl|sh script.
+    private func installUv() -> Bool {
+        log("📦 Installing uv package manager (astral.sh)…")
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/bash")
+        task.arguments = ["-c", "curl -LsSf https://astral.sh/uv/install.sh | sh"]
+        task.environment = [
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:\(NSHomeDirectory())/.local/bin"
+        ]
         let pipe = Pipe()
-        process.standardOutput = pipe; process.standardError = pipe
+        task.standardOutput = pipe; task.standardError = pipe
         do {
-            try process.run()
-            process.waitUntilExit()
+            try task.run(); task.waitUntilExit()
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             let output = String(data: data, encoding: .utf8) ?? ""
-            return (process.terminationStatus == 0, output)
+            log(output)
+            if task.terminationStatus == 0 {
+                let uvBin = "\(NSHomeDirectory())/.local/bin/uv"
+                if FileManager.default.fileExists(atPath: uvBin) {
+                    log("✅ uv installed at \(uvBin)")
+                    return true
+                }
+            }
+            log("❌ uv install script exited with code \(task.terminationStatus)")
+            return false
         } catch {
-            return (false, error.localizedDescription)
+            log("❌ Failed to install uv: \(error.localizedDescription)")
+            return false
         }
+    }
+    
+    // MARK: - voxcpmane2 Installation (via uv)
+    
+    /// Install or upgrade voxcpmane2 via `uv tool install`.
+    /// - On Apple Silicon: installs 0.1.3b1 (required for --split-base-lm).
+    /// - On Intel: installs latest stable.
+    /// - Returns: true on success.
+    func installVoxcpmane2(systemPython: String) -> Bool {
+        // Ensure uv is available
+        var uv = ServerManager.findUv()
+        if uv == nil {
+            guard installUv() else { return false }
+            uv = ServerManager.findUv()
+        }
+        guard let uv = uv else {
+            log("❌ uv not found after installation attempt")
+            return false
+        }
+        
+        // Build install arguments
+        var args = ["tool", "install", "--python", systemPython]
+        
+        if isAppleSilicon {
+            log("🍎 Apple Silicon detected — installing beta 0.1.3b1 for --split-base-lm support")
+            args.append(contentsOf: ["--prerelease", "allow", "-U", "voxcpmane2==0.1.3b1"])
+        } else {
+            args.append(contentsOf: ["-U", "voxcpmane2"])
+        }
+        
+        log("📦 Running: uv \(args.joined(separator: " "))")
+        
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: uv)
+        task.arguments = args
+        task.environment = [
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:\(NSHomeDirectory())/.local/bin",
+            "HOME": NSHomeDirectory()
+        ]
+        
+        let pipe = Pipe()
+        task.standardOutput = pipe; task.standardError = pipe
+        
+        do {
+            try task.run(); task.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: data, encoding: .utf8) ?? ""
+            log(output)
+            
+            if task.terminationStatus == 0 {
+                // Verify the binary exists
+                if FileManager.default.fileExists(atPath: serverBinary) {
+                    log("✅ voxcpmane2-server installed at \(serverBinary)")
+                    return true
+                } else {
+                    log("⚠️ uv tool install succeeded but \(serverBinary) not found")
+                    // Try to locate it
+                    let found = findUvToolBinary("voxcpmane2-server")
+                    if found != nil {
+                        log("✅ Found voxcpmane2-server at \(found!)")
+                        return true
+                    }
+                    log("❌ Cannot locate voxcpmane2-server after installation")
+                    return false
+                }
+            } else {
+                log("❌ uv tool install exited with code \(task.terminationStatus)")
+                return false
+            }
+        } catch {
+            log("❌ uv tool install failed: \(error.localizedDescription)")
+            return false
+        }
+    }
+    
+    /// Find a binary installed by `uv tool install`.
+    private func findUvToolBinary(_ name: String) -> String? {
+        // uv tools are typically installed to ~/.local/bin
+        let candidates = [
+            "\(NSHomeDirectory())/.local/bin/\(name)",
+            "\(NSHomeDirectory())/.cargo/bin/\(name)",
+        ]
+        for path in candidates {
+            if FileManager.default.fileExists(atPath: path) { return path }
+        }
+        // Search common uv tool directories
+        let uvToolDirs = [
+            "\(NSHomeDirectory())/.local/share/uv/tools",
+        ]
+        for dir in uvToolDirs {
+            guard let contents = try? FileManager.default.contentsOfDirectory(atPath: dir) else { continue }
+            for item in contents {
+                let binPath = "\(dir)/\(item)/bin/\(name)"
+                if FileManager.default.fileExists(atPath: binPath) { return binPath }
+            }
+        }
+        return nil
     }
     
     // MARK: - Server Lifecycle
@@ -185,8 +271,8 @@ class ServerManager: ObservableObject {
                 return
             }
             
-            // 2. Set up isolated venv + install voxcpmane2
-            guard let venvPy = self.setupVenv(systemPython: systemPython) else {
+            // 2. Install/upgrade voxcpmane2 via uv tool install
+            guard self.installVoxcpmane2(systemPython: systemPython) else {
                 DispatchQueue.main.async {
                     self.status = .error(
                         "Failed to install voxcpmane2.\n\nCheck the logs for details and ensure you have an internet connection."
@@ -202,22 +288,46 @@ class ServerManager: ObservableObject {
             DispatchQueue.main.async { self.port = port }
             
             // 4. Launch!
-            self.launchServer(venvPython: venvPy, port: port)
+            self.launchServer(port: port)
         }
     }
     
-    private func launchServer(venvPython: String, port: Int) {
+    private func launchServer(port: Int) {
+        // Ensure the server binary exists
+        var binary = serverBinary
+        if !FileManager.default.fileExists(atPath: binary) {
+            if let found = findUvToolBinary("voxcpmane2-server") {
+                binary = found
+            } else {
+                log("❌ voxcpmane2-server not found")
+                DispatchQueue.main.async { self.status = .error("voxcpmane2-server not found") }
+                return
+            }
+        }
+        
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: venvPython)
-        var args = ["-m", "voxcpmane.server", "--host", "127.0.0.1", "--port", "\(port)"]
+        process.executableURL = URL(fileURLWithPath: binary)
+        var args = ["--host", "127.0.0.1", "--port", "\(port)"]
         
         if let modelDir = UserDefaults.standard.string(forKey: "modelDirectory"), !modelDir.isEmpty {
             args.append(contentsOf: ["--model-dir", modelDir])
         }
+        
+        // --split-base-lm is only available in voxcpmane2 0.1.3b1 (pre-release)
         if UserDefaults.standard.bool(forKey: "splitBaseLM") {
-            args.append("--split-base-lm")
+            if isAppleSilicon {
+                args.append("--split-base-lm")
+                log("⚡ --split-base-lm enabled (Apple Silicon)")
+            } else {
+                log("⚠️ --split-base-lm is only supported on Apple Silicon, skipping")
+            }
         }
+        
         process.arguments = args
+        process.environment = [
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:\(NSHomeDirectory())/.local/bin",
+            "HOME": NSHomeDirectory()
+        ]
         
         let outputPipe = Pipe(); let errorPipe = Pipe()
         process.standardOutput = outputPipe; process.standardError = errorPipe
@@ -247,7 +357,7 @@ class ServerManager: ObservableObject {
         } catch {
             log("❌ Failed to launch server: \(error)")
             DispatchQueue.main.async {
-                self.status = .error("Failed to launch Python server:\n\(error.localizedDescription)")
+                self.status = .error("Failed to launch server:\n\(error.localizedDescription)")
             }
         }
     }
