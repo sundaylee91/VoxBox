@@ -48,10 +48,10 @@ struct ContentView: View {
                 }
             }
 
-            // ── Refined status pill (top-right, more compact) ──
+            // ── Refined status pill (bottom-left, clear of scrollbar) ──
             VStack {
+                Spacer()
                 HStack {
-                    Spacer()
                     HStack(spacing: 5) {
                         StatusBadge(status: serverManager.status)
 
@@ -74,10 +74,10 @@ struct ContentView: View {
                             .fill(.ultraThinMaterial)
                             .shadow(color: .black.opacity(0.06), radius: 3, y: 1)
                     )
-                    .padding(.top, 6)
-                    .padding(.trailing, 6)
+                    .padding(.bottom, 6)
+                    .padding(.leading, 6)
+                    Spacer()
                 }
-                Spacer()
             }
         }
         .sheet(isPresented: $showSettings) {
