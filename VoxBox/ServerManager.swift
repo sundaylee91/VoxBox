@@ -21,6 +21,21 @@
 import Foundation
 import AppKit
 
+// MARK: - Audio Format
+
+enum AudioFormat: String, CaseIterable {
+    case wav = "WAV"
+    case mp3 = "MP3"
+    
+    var fileExtension: String { rawValue.lowercased() }
+    var mimeType: String {
+        switch self {
+        case .wav: return "audio/wav"
+        case .mp3: return "audio/mpeg"
+        }
+    }
+}
+
 // MARK: - Log Entry
 
 struct LogEntry: Identifiable, Equatable {
@@ -50,6 +65,14 @@ final class ServerManager: ObservableObject {
     
     /// Last captured audio data from the web UI (ready for save).
     @Published var lastAudioData: Data?
+    /// The text that was used to generate the last audio (for file naming).
+    @Published var lastAudioText: String?
+    /// Preferred export format.
+    @Published var preferredFormat: AudioFormat {
+        didSet {
+            UserDefaults.standard.set(preferredFormat.rawValue, forKey: "VoxBox.preferredFormat")
+        }
+    }
 
     private var process: Process?
     private var stdoutPipe: Pipe?
@@ -73,6 +96,14 @@ final class ServerManager: ObservableObject {
         self.uvPath = ServerManager.findUv()
         self.isAppleSilicon = ServerManager.isAppleSiliconMac()
         self.isM1Series = ServerManager.isM1Series()
+        
+        // Restore saved format preference
+        if let saved = UserDefaults.standard.string(forKey: "VoxBox.preferredFormat"),
+           let fmt = AudioFormat(rawValue: saved) {
+            self.preferredFormat = fmt
+        } else {
+            self.preferredFormat = .wav
+        }
 
         try? FileManager.default.createDirectory(
             at: base,
@@ -134,6 +165,7 @@ final class ServerManager: ObservableObject {
         process = nil
         status = .stopped
         lastAudioData = nil
+        lastAudioText = nil
         appendLog("⏹ Server stopped.")
     }
 
@@ -160,8 +192,36 @@ final class ServerManager: ObservableObject {
     
     // MARK: - Save Audio
     
+    /// Builds a filename from the text used to generate the audio.
+    private func filenameFromText(_ text: String?, format: AudioFormat) -> String {
+        var name = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        if !name.isEmpty {
+            // Sanitize: macOS forbids ":" (use full-width "：" instead)
+            name = name
+                .replacingOccurrences(of: ":", with: "：")   // full-width colon
+                .replacingOccurrences(of: "/", with: "-")
+                .replacingOccurrences(of: "\n", with: " ")
+                .replacingOccurrences(of: "\r", with: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            // Truncate if too long
+            if name.count > 100 {
+                name = String(name.prefix(100))
+            }
+        }
+        
+        if name.isEmpty {
+            name = "voxbox_output"
+        }
+        
+        return "\(name).\(format.fileExtension)"
+    }
+    
     /// Opens a native NSSavePanel and writes the last captured audio data to disk.
-    func saveAudio() {
+    func saveAudio(format: AudioFormat? = nil) {
+        let fmt = format ?? preferredFormat
+        
         guard let data = lastAudioData else {
             appendLog("⚠️ No audio data to save.")
             return
@@ -169,23 +229,80 @@ final class ServerManager: ObservableObject {
         
         let savePanel = NSSavePanel()
         savePanel.title = "Save Generated Audio"
-        savePanel.nameFieldStringValue = "voxbox_output.wav"
-        savePanel.allowedFileTypes = ["wav"]
+        savePanel.nameFieldStringValue = filenameFromText(lastAudioText, format: fmt)
+        savePanel.allowedFileTypes = [fmt.fileExtension]
         savePanel.canCreateDirectories = true
         
         savePanel.begin { [weak self] response in
-            guard response == .OK, let url = savePanel.url else { return }
-            do {
-                try data.write(to: url)
-                Task { @MainActor [weak self] in
-                    self?.appendLog("💾 Audio saved to \(url.path)")
-                }
-            } catch {
-                Task { @MainActor [weak self] in
-                    self?.appendLog("❌ Failed to save audio: \(error.localizedDescription)")
+            guard response == .OK, let url = savePanel.url, let self = self else { return }
+            
+            Task { @MainActor in
+                do {
+                    let outputData: Data
+                    
+                    switch fmt {
+                    case .wav:
+                        outputData = data
+                    case .mp3:
+                        outputData = try self.convertToMP3(wavData: data)
+                    }
+                    
+                    try outputData.write(to: url)
+                    self.appendLog("💾 Audio saved to \(url.path) (\(fmt.rawValue))")
+                    
+                    // Clear after successful save
+                    self.lastAudioData = nil
+                    self.lastAudioText = nil
+                } catch {
+                    self.appendLog("❌ Failed to save audio: \(error.localizedDescription)")
+                    // Fallback: try saving as WAV if MP3 conversion failed
+                    if case .mp3 = fmt {
+                        self.appendLog("⚠️ MP3 conversion failed — try saving as WAV instead.")
+                    }
                 }
             }
         }
+    }
+    
+    /// Converts WAV PCM data to MP3 using the system `afconvert` tool.
+    private func convertToMP3(wavData: Data) throws -> Data {
+        let tempDir = FileManager.default.temporaryDirectory
+        let wavURL = tempDir.appendingPathComponent("voxbox_\(UUID().uuidString).wav")
+        let mp3URL = tempDir.appendingPathComponent("voxbox_\(UUID().uuidString).mp3")
+        
+        try wavData.write(to: wavURL)
+        defer {
+            try? FileManager.default.removeItem(at: wavURL)
+            try? FileManager.default.removeItem(at: mp3URL)
+        }
+        
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/afconvert")
+        // afconvert -f mp3f -d '.mp3' input.wav -o output.mp3
+        process.arguments = [
+            "-f", "mp3f",
+            "-d", ".mp3",
+            wavURL.path,
+            "-o", mp3URL.path
+        ]
+        
+        let errorPipe = Pipe()
+        process.standardError = errorPipe
+        
+        try process.run()
+        process.waitUntilExit()
+        
+        guard process.terminationStatus == 0 else {
+            let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            let errorStr = String(data: errorData, encoding: .utf8) ?? "Unknown error"
+            throw NSError(
+                domain: "VoxBox.afconvert",
+                code: Int(process.terminationStatus),
+                userInfo: [NSLocalizedDescriptionKey: "MP3 conversion failed: \(errorStr)"]
+            )
+        }
+        
+        return try Data(contentsOf: mp3URL)
     }
 
     // MARK: - Start Sequence

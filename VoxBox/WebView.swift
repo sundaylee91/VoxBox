@@ -3,7 +3,8 @@ import WebKit
 
 struct WebView: NSViewRepresentable {
     let url: URL
-    var onAudioCaptured: ((Data) -> Void)? = nil
+    /// (audioData, textUsed)
+    var onAudioCaptured: ((Data, String) -> Void)? = nil
     
     func makeCoordinator() -> Coordinator { Coordinator() }
     
@@ -44,6 +45,18 @@ struct WebView: NSViewRepresentable {
                 else if (url instanceof Request) urlStr = url.url;
                 else urlStr = String(url);
                 
+                // ── Extract text from request body ──
+                var inputText = '';
+                if (urlStr.indexOf('/audio/speech') !== -1) {
+                    try {
+                        var options = arguments[1];
+                        if (options && typeof options.body === 'string') {
+                            var body = JSON.parse(options.body);
+                            inputText = body.input || '';
+                        }
+                    } catch(e) { /* ignore parse errors */ }
+                }
+                
                 return _fetch.apply(this, arguments).then(function(response) {
                     if (urlStr.indexOf('/audio/speech') !== -1 && response.ok) {
                         var ct = response.headers.get('content-type') || '';
@@ -53,7 +66,8 @@ struct WebView: NSViewRepresentable {
                                 var base64 = _arrayBufferToBase64(buffer);
                                 window.webkit.messageHandlers.audioCaptured.postMessage({
                                     data: base64,
-                                    mimeType: ct
+                                    mimeType: ct,
+                                    text: inputText
                                 });
                             }).catch(function(e) {
                                 console.log('[VoxBox] Audio capture error:', e);
@@ -110,7 +124,7 @@ struct WebView: NSViewRepresentable {
     }
     
     class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
-        var onAudioCaptured: ((Data) -> Void)?
+        var onAudioCaptured: ((Data, String) -> Void)?
         var requestedURL: URL?
         var isLoading = false
         
@@ -167,9 +181,10 @@ struct WebView: NSViewRepresentable {
                     print("⚠️ [VoxBox] Failed to decode captured audio")
                     return
                 }
-                print("🎵 [VoxBox] Audio captured: \(audioData.count) bytes")
+                let text = body["text"] as? String ?? ""
+                print("🎵 [VoxBox] Audio captured: \(audioData.count) bytes, text: \"\(text.prefix(40))\"")
                 DispatchQueue.main.async { [weak self] in
-                    self?.onAudioCaptured?(audioData)
+                    self?.onAudioCaptured?(audioData, text)
                 }
                 
             default:
