@@ -861,12 +861,11 @@ final class ServerManager: ObservableObject {
         }
 
         // Fallback: use `which uv`
-        if let result = try? runSync("/bin/sh", args: ["-c", "command -v uv 2>/dev/null"]),
-           let p = result.trimmingCharacters(in: .whitespacesAndNewlines),
-           !p.isEmpty,
-           p.hasPrefix("/"),
-           FileManager.default.isExecutableFile(atPath: p) {
-            return p
+        if let result = try? runSync("/bin/sh", args: ["-c", "command -v uv 2>/dev/null"]) {
+            let p = result.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !p.isEmpty, p.hasPrefix("/"), FileManager.default.isExecutableFile(atPath: p) {
+                return p
+            }
         }
 
         return nil
