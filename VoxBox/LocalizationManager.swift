@@ -194,10 +194,29 @@ struct L10n {
     static var status: String { zh ? "状态" : "Status" }
     static var port: String { zh ? "端口" : "Port" }
 
+    // MARK: - Auto-save & Recordings Folder
+    static var autoSavedTitle: String { zh ? "🎵 已自动保存" : "🎵 Auto-saved" }
+    static var autoSavedToFolder: String {
+        zh ? "已保存至 VoxBox Recordings 文件夹" : "Saved to VoxBox Recordings folder"
+    }
+    static var openRecordingsFolder: String { zh ? "📂 打开文件夹" : "📂 Open Folder" }
+    static var saveAsButton: String { zh ? "💾 另存为…" : "💾 Save As…" }
+    static var openRecordingsFolderMenu: String {
+        zh ? "📂 打开录音文件夹" : "📂 Open Recordings Folder"
+    }
+
     // MARK: - JS Injected Strings (used in WebView JS)
     static var jsSave: String { zh ? "💾 保存" : "💾 Save" }
     static var jsSaved: String { zh ? "✅ 已保存!" : "✅ Saved!" }
     static var jsNoAudio: String { zh ? "暂无音频" : "No audio yet" }
     static var jsDownloadHistory: String { zh ? "📥 历史" : "📥 History" }
     static var jsClose: String { zh ? "✕" : "✕" }
+    static var jsClockTooltip: String {
+        zh ? "打开录音文件夹" : "Open Recordings Folder"
+    }
+    static var jsAutoSavedToast: String {
+        zh ? "🎵 已自动保存" : "🎵 Auto-saved"
+    }
+    static var jsOpenFolder: String { zh ? "📂" : "📂" }
+    static var jsSaveAs: String { zh ? "💾" : "💾" }
 }
