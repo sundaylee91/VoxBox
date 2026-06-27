@@ -921,6 +921,7 @@ final class ServerManager: ObservableObject {
 
     // MARK: - Install uv
 
+    /// Search for uv in common locations. Returns an absolute, existing path, or "" if not found.
     private static func findUv() -> String {
         let candidates = [
             "/opt/homebrew/bin/uv",
@@ -933,8 +934,13 @@ final class ServerManager: ObservableObject {
                 return path
             }
         }
-        let which = try? runSync("/bin/sh", args: ["-c", "command -v uv"])
-        if let p = which?.trimmingCharacters(in: .whitespacesAndNewlines), !p.isEmpty {
+        // Last resort: ask the shell (login shell to pick up PATH)
+        let which = try? runSync("/bin/sh", args: ["-lc", "command -v uv 2>/dev/null"])
+        if let p = which?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !p.isEmpty,
+           p.hasPrefix("/"),                 // ← must be absolute path
+           FileManager.default.fileExists(atPath: p)  // ← must actually exist
+        {
             return p
         }
         return ""
