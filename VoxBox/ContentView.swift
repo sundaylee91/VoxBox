@@ -83,7 +83,8 @@ struct WarmingUpView: View {
                 Text("Loading CoreML models into Neural Engine…")
                     .font(.subheadline).foregroundColor(.secondary)
                 Text("Port: \(port)")
-                    .font(.caption).foregroundColor(.tertiary)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
                     .monospaced()
             }
             
