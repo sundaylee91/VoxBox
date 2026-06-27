@@ -1,0 +1,35 @@
+# Xcode
+*.xcuserdata
+*.xcworkspace/xcuserdata
+DerivedData/
+build/
+*.xcarchive
+
+# Swift
+.build/
+Packages/
+Package.resolved
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Models
+voxcpmane2_models/
+models/
+*.mlmodelc
+
+# OS
+.DS_Store
+Thumbs.db
+
+# DMG
+*.dmg
+*.sparseimage
+
+# IDE
+.idea/
+.vscode/
