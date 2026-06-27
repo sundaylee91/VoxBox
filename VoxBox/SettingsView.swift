@@ -42,13 +42,15 @@ struct SettingsView: View {
                     // ── Audio ──
                     SettingsSection(title: L10n.saveAudio, icon: "waveform") {
                         VStack(alignment: .leading, spacing: 6) {
-                            Picker(L10n.languageLabel, selection: $serverManager.preferredFormat) {
+                            Picker(L10n.audioFormat, selection: $serverManager.preferredFormat) {
                                 ForEach(AudioFormat.allCases, id: \.self) { fmt in
                                     Text(fmt.rawValue).tag(fmt)
                                 }
                             }
                             .pickerStyle(.radioGroup)
-                            .disabled(!serverManager.mp3Available && serverManager.preferredFormat == .mp3)
+
+                            Text(L10n.formatDesc)
+                                .font(.caption).foregroundColor(.secondary)
 
                             if !serverManager.mp3Available {
                                 HStack(spacing: 4) {
@@ -58,6 +60,8 @@ struct SettingsView: View {
                                         .font(.caption).foregroundColor(.secondary)
                                 }
                             }
+
+                            Divider()
 
                             Text(L10n.autoSavedToFolder)
                                 .font(.caption).foregroundColor(.secondary)
