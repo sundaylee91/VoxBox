@@ -9,7 +9,7 @@ struct WebView: NSViewRepresentable {
     var onSaveRequested: (() -> Void)? = nil
     /// User clicked save for a specific history item
     var onSaveHistoryItem: ((Int) -> Void)? = nil
-    /// User clicked the clock icon to open recordings folder
+    /// User clicked the clock icon to open output folder
     var onOpenRecordingsFolder: (() -> Void)? = nil
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -74,9 +74,9 @@ struct WebView: NSViewRepresentable {
     // MARK: - JS Injection
 
     private func createCaptureScript() -> String {
-        // Read language for JS strings
+        // Read language for JS strings (no extra backslashes—clean interpolation)
         let zh = LocalizationManager.shared.isChinese
-        let jsClockTooltip = zh ? "打开录音文件夹" : "Open Recordings Folder"
+        let jsClockTooltip = zh ? "打开输出文件夹" : "Open Output Folder"
         let jsAutoSavedToast = zh ? "🎵 已自动保存" : "🎵 Auto-saved"
         let jsSaveAs = zh ? "💾" : "💾"
         let jsOpenFolder = zh ? "📂" : "📂"
@@ -113,14 +113,14 @@ struct WebView: NSViewRepresentable {
         var style = document.createElement('style');
         style.id = 'voxbox-styles';
         style.textContent = [
-            '@keyframes voxboxSlideIn{from{transform:translateY(-16px);opacity:0}to{transform:translateY(0);opacity:1}}',
-            '@keyframes voxboxSlideOut{from{transform:translateY(0);opacity:1}to{transform:translateY(-16px);opacity:0}}',
-            '#voxbox-clock-btn:hover{transform:scale(1.1);box-shadow:0 4px 16px rgba(0,0,0,0.35)}'
+            '@keyframes voxboxSlideIn{from{transform:translateY(-12px);opacity:0}to{transform:translateY(0);opacity:1}}',
+            '@keyframes voxboxSlideOut{from{transform:translateY(0);opacity:1}to{transform:translateY(-12px);opacity:0}}',
+            '#voxbox-clock-btn:hover{transform:scale(1.1);box-shadow:0 2px 10px rgba(0,0,0,0.35)}'
         ].join('');
         document.head.appendChild(style);
     }
 
-    // ── Clock icon button (top-left) ──
+    // ── Clock icon button (top-left, smaller & refined) ──
     function ensureClockButton() {
         if (document.getElementById('voxbox-clock-btn')) return;
         injectStyles();
@@ -128,26 +128,26 @@ struct WebView: NSViewRepresentable {
         var btn = document.createElement('button');
         btn.id = 'voxbox-clock-btn';
         btn.innerHTML = '🕐';
-        btn.title = '\\(jsClockTooltip)';
+        btn.title = '\(jsClockTooltip)';
         btn.style.cssText = [
             'position:fixed',
-            'top:10px',
-            'left:10px',
+            'top:12px',
+            'left:12px',
             'z-index:2147483646',
-            'width:34px',
-            'height:34px',
+            'width:28px',
+            'height:28px',
             'border-radius:50%',
-            'background:rgba(30,30,46,0.85)',
-            'border:1px solid rgba(255,255,255,0.15)',
+            'background:rgba(30,30,46,0.8)',
+            'border:1px solid rgba(255,255,255,0.12)',
             'cursor:pointer',
-            'font-size:17px',
-            'line-height:34px',
+            'font-size:14px',
+            'line-height:28px',
             'text-align:center',
             'padding:0',
-            'backdrop-filter:blur(10px)',
-            '-webkit-backdrop-filter:blur(10px)',
+            'backdrop-filter:blur(8px)',
+            '-webkit-backdrop-filter:blur(8px)',
             'transition:transform 0.2s,box-shadow 0.2s',
-            'box-shadow:0 2px 10px rgba(0,0,0,0.25)'
+            'box-shadow:0 1px 8px rgba(0,0,0,0.2)'
         ].join(';');
 
         btn.onclick = function(e) {
@@ -160,7 +160,7 @@ struct WebView: NSViewRepresentable {
         document.body.appendChild(btn);
     }
 
-    // ── Compact notification (top-right, below status bar area) ──
+    // ── Compact notification (top-right, refined position) ──
     function showNotification(text) {
         var existing = document.getElementById('voxbox-notification');
         if (existing) existing.remove();
@@ -171,36 +171,36 @@ struct WebView: NSViewRepresentable {
         var notif = document.createElement('div');
         notif.id = 'voxbox-notification';
         notif.innerHTML =
-            '<div style="display:flex;align-items:center;gap:6px;padding:6px 10px;' +
-            'background:rgba(22,22,40,0.92);color:#e2e8f0;' +
-            'border-radius:10px;font-size:12px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;' +
-            'box-shadow:0 4px 20px rgba(0,0,0,0.3);pointer-events:auto;max-width:420px;' +
-            'border:1px solid rgba(255,255,255,0.08);line-height:1.3;">' +
-            '<span style="white-space:nowrap;font-weight:500;">\\(jsAutoSavedToast)</span>' +
+            '<div style="display:flex;align-items:center;gap:6px;padding:5px 10px;' +
+            'background:rgba(22,22,40,0.9);color:#e2e8f0;' +
+            'border-radius:8px;font-size:11px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;' +
+            'box-shadow:0 3px 16px rgba(0,0,0,0.25);pointer-events:auto;max-width:400px;' +
+            'border:1px solid rgba(255,255,255,0.07);line-height:1.4;">' +
+            '<span style="white-space:nowrap;font-weight:500;">\(jsAutoSavedToast)</span>' +
             '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#94a3b8;">· ' +
                 escapeHTML(displayText) +
             '</span>' +
-            '<button id="voxbox-notif-open" title="\\(jsOpenFolder)" style="padding:3px 6px;background:rgba(255,255,255,0.08);color:#e2e8f0;border:1px solid rgba(255,255,255,0.1);' +
-                'border-radius:6px;cursor:pointer;font-size:13px;line-height:1;transition:background 0.15s;">' +
-                '\\(jsOpenFolder)' +
+            '<button id="voxbox-notif-open" title="\(jsOpenFolder)" style="padding:2px 5px;background:rgba(255,255,255,0.08);color:#e2e8f0;border:1px solid rgba(255,255,255,0.1);' +
+                'border-radius:5px;cursor:pointer;font-size:12px;line-height:1;transition:background 0.15s;">' +
+                '\(jsOpenFolder)' +
             '</button>' +
-            '<button id="voxbox-notif-save" title="\\(jsSaveAs)" style="padding:3px 6px;background:rgba(255,255,255,0.08);color:#e2e8f0;border:1px solid rgba(255,255,255,0.1);' +
-                'border-radius:6px;cursor:pointer;font-size:13px;line-height:1;transition:background 0.15s;">' +
-                '\\(jsSaveAs)' +
+            '<button id="voxbox-notif-save" title="\(jsSaveAs)" style="padding:2px 5px;background:rgba(255,255,255,0.08);color:#e2e8f0;border:1px solid rgba(255,255,255,0.1);' +
+                'border-radius:5px;cursor:pointer;font-size:12px;line-height:1;transition:background 0.15s;">' +
+                '\(jsSaveAs)' +
             '</button>' +
-            '<button id="voxbox-notif-close" style="padding:2px 4px;background:transparent;color:#94a3b8;' +
-                'border:none;cursor:pointer;font-size:14px;line-height:1;transition:color 0.15s;">' +
+            '<button id="voxbox-notif-close" style="padding:1px 3px;background:transparent;color:#94a3b8;' +
+                'border:none;cursor:pointer;font-size:13px;line-height:1;transition:color 0.15s;">' +
                 '✕' +
             '</button>' +
             '</div>';
 
         notif.style.cssText = [
             'position:fixed',
-            'top:44px',
-            'right:10px',
+            'top:12px',
+            'right:12px',
             'z-index:2147483647',
             'pointer-events:none',
-            'animation:voxboxSlideIn 0.3s ease-out'
+            'animation:voxboxSlideIn 0.25s ease-out'
         ].join(';');
 
         document.body.appendChild(notif);
@@ -228,7 +228,7 @@ struct WebView: NSViewRepresentable {
             saveBtn.textContent = '✅';
             setTimeout(function() {
                 saveBtn.style.background = 'rgba(255,255,255,0.08)';
-                saveBtn.textContent = '\\(jsSaveAs)';
+                saveBtn.textContent = '\(jsSaveAs)';
             }, 1500);
         };
 
@@ -239,7 +239,7 @@ struct WebView: NSViewRepresentable {
             dismissNotification(notif);
         };
 
-        var timer = setTimeout(function() { dismissNotification(notif); }, 10000);
+        var timer = setTimeout(function() { dismissNotification(notif); }, 8000);
         notif._voxboxTimer = timer;
     }
 
@@ -247,10 +247,10 @@ struct WebView: NSViewRepresentable {
         if (!notif || notif._voxboxDismissed) return;
         notif._voxboxDismissed = true;
         clearTimeout(notif._voxboxTimer);
-        notif.style.animation = 'voxboxSlideOut 0.25s ease-in forwards';
+        notif.style.animation = 'voxboxSlideOut 0.2s ease-in forwards';
         setTimeout(function() {
             if (notif.parentNode) notif.parentNode.removeChild(notif);
-        }, 300);
+        }, 250);
     }
 
     // ── Send to Swift ──

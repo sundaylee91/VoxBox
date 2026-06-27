@@ -63,10 +63,46 @@ struct SettingsView: View {
 
                             Divider()
 
-                            Text(L10n.autoSavedToFolder)
-                                .font(.caption).foregroundColor(.secondary)
+                            // ── Output Folder ──
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(L10n.outputFolderLabel)
+                                    .font(.subheadline).fontWeight(.medium)
+                                Text(L10n.outputFolderDesc)
+                                    .font(.caption).foregroundColor(.secondary)
 
-                            Button(L10n.openRecordingsFolder) {
+                                HStack(spacing: 6) {
+                                    Text(serverManager.outputFolder.path)
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(Color(nsColor: .textBackgroundColor))
+                                        .cornerRadius(6)
+
+                                    Button(L10n.chooseFolder) {
+                                        serverManager.chooseOutputFolder()
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .font(.caption)
+
+                                    Button(L10n.resetToDefault) {
+                                        serverManager.resetOutputFolder()
+                                    }
+                                    .buttonStyle(.plain)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                }
+
+                                Text(L10n.defaultOutputPath)
+                                    .font(.caption2).foregroundColor(.tertiary)
+                            }
+
+                            Divider()
+
+                            Button(L10n.openOutputFolder) {
                                 serverManager.openRecordingsFolder()
                             }
                             .buttonStyle(.bordered)
@@ -154,7 +190,7 @@ struct SettingsView: View {
                 .padding()
             }
         }
-        .frame(width: 520, height: 600)
+        .frame(width: 540, height: 640)
     }
 
     private func browseModelDirectory() {

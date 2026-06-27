@@ -48,28 +48,29 @@ struct ContentView: View {
                 }
             }
 
-            // ── Minimal status pill (top-right) ──
+            // ── Refined status pill (top-right, more compact) ──
             VStack {
                 HStack {
                     Spacer()
-                    HStack(spacing: 4) {
+                    HStack(spacing: 5) {
                         StatusBadge(status: serverManager.status)
                         Button { showSettings.toggle() } label: {
                             Image(systemName: "gearshape")
-                                .font(.system(size: 10, weight: .medium))
+                                .font(.system(size: 11, weight: .medium))
                                 .foregroundColor(.secondary)
                         }
                         .buttonStyle(.plain)
                         .help(L10n.settings)
                     }
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
                     .background(
-                        RoundedRectangle(cornerRadius: 8)
+                        RoundedRectangle(cornerRadius: 7)
                             .fill(.ultraThinMaterial)
+                            .shadow(color: .black.opacity(0.06), radius: 3, y: 1)
                     )
-                    .padding(.top, 4)
-                    .padding(.trailing, 4)
+                    .padding(.top, 6)
+                    .padding(.trailing, 6)
                 }
                 Spacer()
             }
