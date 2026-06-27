@@ -16,8 +16,11 @@ struct MenuBarView: View {
             
             VStack(alignment: .leading, spacing: 4) {
                 Text("Status: \(statusText)").font(.system(size: 12)).foregroundColor(.secondary)
-                if case .running = serverManager.status {
-                    Text("Port: \(serverManager.port)").font(.system(size: 12)).foregroundColor(.secondary)
+                switch serverManager.status {
+                case .running(let port), .warmingUp(let port):
+                    Text("Port: \(port)").font(.system(size: 12)).foregroundColor(.secondary)
+                default:
+                    EmptyView()
                 }
             }
             .padding(.horizontal, 12)
@@ -30,6 +33,9 @@ struct MenuBarView: View {
                 if case .running = serverManager.status {
                     Button("Open VoxBox") { serverManager.openInBrowser() }
                     Button("Restart Server") { serverManager.restart() }
+                    Button("Stop Server") { serverManager.stop() }
+                }
+                if case .warmingUp = serverManager.status {
                     Button("Stop Server") { serverManager.stop() }
                 }
                 if case .starting = serverManager.status { Button("Stop") { serverManager.stop() } }
@@ -49,9 +55,10 @@ struct MenuBarView: View {
         switch serverManager.status {
         case .stopped: return "Stopped"
         case .starting: return "Starting…"
+        case .warmingUp: return "Warming up…"
         case .downloading(let p): return "Downloading \(Int(p * 100))%"
         case .running: return "Running"
-        case .error(let msg): return "Error"
+        case .error: return "Error"
         }
     }
 }
@@ -69,13 +76,13 @@ struct StatusDot: View {
     private var color: Color {
         switch status {
         case .running: return .green
-        case .starting, .downloading: return .orange
+        case .starting, .downloading, .warmingUp: return .orange
         case .stopped: return .gray
         case .error: return .red
         }
     }
     
     private var pulsing: Bool {
-        switch status { case .starting, .downloading: return true; default: return false }
+        switch status { case .starting, .downloading, .warmingUp: return true; default: return false }
     }
 }
