@@ -988,6 +988,7 @@ enum VoxBoxHTML {
     var currentBlobURL = null;
     var customVoices = [];
     var CUSTOM_VOICES_KEY = 'voxbox_custom_voices';
+    var _suppressVoiceChange = false;  // guard against re-entrant change events
 
     // ── Format time ──
     function formatTime(seconds) {
@@ -1018,6 +1019,7 @@ enum VoxBoxHTML {
 
     function getCurrentSettings() {
         var voiceVal = voiceSelect.value;
+        // Strip custom prefix if present — save the resolved voice (or empty)
         if (voiceVal && voiceVal.indexOf('__custom__') === 0) {
             voiceVal = '';
         }
@@ -1031,33 +1033,39 @@ enum VoxBoxHTML {
         };
     }
 
+    // Apply settings to UI without triggering re-entrant voice change
     function applySettings(settings) {
         if (!settings) return;
-        if (settings.voice !== undefined) {
-            if (availableVoices.indexOf(settings.voice) >= 0) {
-                voiceSelect.value = settings.voice;
-                voiceSelect.setAttribute('data-is-custom', 'false');
-            } else {
-                voiceSelect.value = '';
-                voiceSelect.setAttribute('data-is-custom', 'false');
+        _suppressVoiceChange = true;
+        try {
+            if (settings.voice !== undefined) {
+                if (availableVoices.indexOf(settings.voice) >= 0) {
+                    voiceSelect.value = settings.voice;
+                    voiceSelect.setAttribute('data-is-custom', 'false');
+                } else {
+                    voiceSelect.value = '';
+                    voiceSelect.setAttribute('data-is-custom', 'false');
+                }
             }
-        }
-        if (settings.voice_mode !== undefined) voiceModeSelect.value = settings.voice_mode;
-        if (settings.speed !== undefined) {
-            speedSlider.value = settings.speed;
-            speedValue.textContent = settings.speed.toFixed(1) + 'x';
-        }
-        if (settings.sample_rate !== undefined) {
-            sampleRateSlider.value = settings.sample_rate;
-            sampleRateValue.textContent = (settings.sample_rate / 1000).toFixed(0) + ' kHz';
-        }
-        if (settings.cfg_value !== undefined) {
-            cfgSlider.value = settings.cfg_value;
-            cfgValue.textContent = settings.cfg_value.toFixed(1);
-        }
-        if (settings.inference_timesteps !== undefined) {
-            timestepsSlider.value = settings.inference_timesteps;
-            timestepsValue.textContent = settings.inference_timesteps;
+            if (settings.voice_mode !== undefined) voiceModeSelect.value = settings.voice_mode;
+            if (settings.speed !== undefined) {
+                speedSlider.value = settings.speed;
+                speedValue.textContent = settings.speed.toFixed(1) + 'x';
+            }
+            if (settings.sample_rate !== undefined) {
+                sampleRateSlider.value = settings.sample_rate;
+                sampleRateValue.textContent = (settings.sample_rate / 1000).toFixed(0) + ' kHz';
+            }
+            if (settings.cfg_value !== undefined) {
+                cfgSlider.value = settings.cfg_value;
+                cfgValue.textContent = settings.cfg_value.toFixed(1);
+            }
+            if (settings.inference_timesteps !== undefined) {
+                timestepsSlider.value = settings.inference_timesteps;
+                timestepsValue.textContent = settings.inference_timesteps;
+            }
+        } finally {
+            _suppressVoiceChange = false;
         }
     }
 
@@ -1081,56 +1089,63 @@ enum VoxBoxHTML {
         var isCustom = sel.getAttribute('data-is-custom') === 'true';
         var customIdx = isCustom ? parseInt(sel.getAttribute('data-custom-idx')) : -1;
 
-        sel.innerHTML = '';
+        _suppressVoiceChange = true;
+        try {
+            sel.innerHTML = '';
 
-        // Default option
-        var defaultOpt = document.createElement('option');
-        defaultOpt.value = '';
-        defaultOpt.textContent = _('defaultVoice');
-        sel.appendChild(defaultOpt);
+            // Default option
+            var defaultOpt = document.createElement('option');
+            defaultOpt.value = '';
+            defaultOpt.textContent = _('defaultVoice');
+            sel.appendChild(defaultOpt);
 
-        // Server presets
-        availableVoices.forEach(function(name) {
-            var opt = document.createElement('option');
-            opt.value = name;
-            opt.textContent = name;
-            sel.appendChild(opt);
-        });
-
-        // Separator + custom voices
-        if (customVoices.length > 0) {
-            var sep = document.createElement('option');
-            sep.value = '';
-            sep.textContent = '──────────';
-            sep.disabled = true;
-            sel.appendChild(sep);
-
-            customVoices.forEach(function(cv, idx) {
+            // Server presets
+            availableVoices.forEach(function(name) {
                 var opt = document.createElement('option');
-                opt.value = '__custom__' + idx;
-                opt.textContent = '⭐ ' + cv.name;
+                opt.value = name;
+                opt.textContent = name;
                 sel.appendChild(opt);
             });
-        }
 
-        // Restore selection
-        if (customIdx >= 0 && customIdx < customVoices.length) {
-            sel.value = '__custom__' + customIdx;
-            sel.setAttribute('data-is-custom', 'true');
-            sel.setAttribute('data-custom-idx', String(customIdx));
-        } else if (availableVoices.indexOf(currentVal) >= 0 || currentVal === '') {
-            sel.value = currentVal;
-            sel.setAttribute('data-is-custom', 'false');
-        } else {
-            sel.value = '';
-            sel.setAttribute('data-is-custom', 'false');
+            // Separator + custom voices
+            if (customVoices.length > 0) {
+                var sep = document.createElement('option');
+                sep.value = '';
+                sep.textContent = '──────────';
+                sep.disabled = true;
+                sel.appendChild(sep);
+
+                customVoices.forEach(function(cv, idx) {
+                    var opt = document.createElement('option');
+                    opt.value = '__custom__' + idx;
+                    opt.textContent = '⭐ ' + cv.name;
+                    sel.appendChild(opt);
+                });
+            }
+
+            // Restore selection
+            if (customIdx >= 0 && customIdx < customVoices.length) {
+                sel.value = '__custom__' + customIdx;
+                sel.setAttribute('data-is-custom', 'true');
+                sel.setAttribute('data-custom-idx', String(customIdx));
+            } else if (availableVoices.indexOf(currentVal) >= 0 || currentVal === '') {
+                sel.value = currentVal;
+                sel.setAttribute('data-is-custom', 'false');
+            } else {
+                sel.value = '';
+                sel.setAttribute('data-is-custom', 'false');
+            }
+        } finally {
+            _suppressVoiceChange = false;
         }
 
         updateDeleteButton();
     }
 
-    // Voice select change
+    // Voice select change — only acts on user-initiated changes
     voiceSelect.addEventListener('change', function() {
+        if (_suppressVoiceChange) return;  // programmatic change, skip
+
         var val = voiceSelect.value;
         if (val && val.indexOf('__custom__') === 0) {
             var idx = parseInt(val.substring('__custom__'.length));
@@ -1139,7 +1154,11 @@ enum VoxBoxHTML {
 
             if (idx >= 0 && idx < customVoices.length) {
                 var preset = customVoices[idx];
+                // applySettings will set voice dropdown (suppressed), restores sliders
                 applySettings(preset);
+                // Re-affirm custom state after applySettings
+                voiceSelect.setAttribute('data-is-custom', 'true');
+                voiceSelect.setAttribute('data-custom-idx', String(idx));
             }
         } else {
             voiceSelect.setAttribute('data-is-custom', 'false');
@@ -1155,14 +1174,27 @@ enum VoxBoxHTML {
         name = name.trim();
 
         var settings = getCurrentSettings();
-        customVoices.push({ name: name, voice: settings.voice, voice_mode: settings.voice_mode, speed: settings.speed, sample_rate: settings.sample_rate, cfg_value: settings.cfg_value, inference_timesteps: settings.inference_timesteps });
+        customVoices.push({
+            name: name,
+            voice: settings.voice,
+            voice_mode: settings.voice_mode,
+            speed: settings.speed,
+            sample_rate: settings.sample_rate,
+            cfg_value: settings.cfg_value,
+            inference_timesteps: settings.inference_timesteps
+        });
         saveCustomVoicesToStorage();
         refreshVoiceDropdown();
 
-        // Select the new custom voice
-        voiceSelect.value = '__custom__' + (customVoices.length - 1);
-        voiceSelect.setAttribute('data-is-custom', 'true');
-        voiceSelect.setAttribute('data-custom-idx', String(customVoices.length - 1));
+        // Select the new custom voice (suppress change to avoid double-fire)
+        _suppressVoiceChange = true;
+        try {
+            voiceSelect.value = '__custom__' + (customVoices.length - 1);
+            voiceSelect.setAttribute('data-is-custom', 'true');
+            voiceSelect.setAttribute('data-custom-idx', String(customVoices.length - 1));
+        } finally {
+            _suppressVoiceChange = false;
+        }
         updateDeleteButton();
 
         showToast(_('presetSaved') + ': ' + name);
@@ -1408,26 +1440,34 @@ enum VoxBoxHTML {
     });
 
     // ── Player: Instant Replay ──
+    // Rebuilds blob URL and resets playback position
     btnReplay.addEventListener('click', function() {
         if (!lastAudioBlob) return;
 
+        // Create fresh blob URL (revokes old one)
         var url = createPlaybackURL(lastAudioBlob);
         audioPlayer.src = url;
+        audioPlayer.load();  // ensure browser parses the new source
+
+        // Reset UI
         audioPlayer.currentTime = 0;
         playerProgress.value = 0;
         playerTimesInline.textContent = '00:00 / ' + formatTime(audioPlayer.duration || 0);
+        btnPlayPause.textContent = '⏸';
 
+        // Start playback — with fallback if src not ready yet
         var playPromise = audioPlayer.play();
         if (playPromise !== undefined) {
             playPromise.catch(function(e) {
                 console.warn('[VoxBox] Replay play() rejected, waiting for canplay:', e.message);
-                audioPlayer.load();
+                // Fallback: wait until browser has enough data
                 audioPlayer.oncanplay = function() {
                     audioPlayer.play().catch(function(e2) {
-                        console.warn('[VoxBox] Replay retry also failed:', e2.message);
+                        console.warn('[VoxBox] Replay fallback also failed:', e2.message);
                     });
                     audioPlayer.oncanplay = null;
                 };
+                audioPlayer.load();  // re-trigger load
             });
         }
     });
