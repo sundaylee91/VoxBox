@@ -111,9 +111,10 @@ final class ServerManager: ObservableObject {
     func stop() {
         if let proc = process, proc.isRunning {
             proc.terminate()
+            // Give it 2 seconds to shut down gracefully, then force-kill
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                 if proc.isRunning {
-                    proc.forceTerminate()
+                    proc.terminate()
                 }
             }
         }
@@ -156,14 +157,14 @@ final class ServerManager: ObservableObject {
                 uv = try await installUv()
                 appendLog("✅ uv installed at \(uv)")
             } catch {
-                await setError("Failed to install uv: \(error.localizedDescription)")
+                setError("Failed to install uv: \(error.localizedDescription)")
                 return
             }
         }
 
         // ── 2. Find system Python (3.10–3.12) ──
         guard let pythonPath = ServerManager.findSystemPython() else {
-            await setError("Python >=3.10,<3.13 not found. Install via Homebrew: brew install python@3.12")
+            setError("Python >=3.10,<3.13 not found. Install via Homebrew: brew install python@3.12")
             return
         }
         appendLog("✅ Found \(pythonPath)")
@@ -195,21 +196,21 @@ final class ServerManager: ObservableObject {
             let output = try await runAsync(uv, args: installArgs)
             appendLog(output)
         } catch {
-            await setError("uv tool install failed: \(error.localizedDescription)")
+            setError("uv tool install failed: \(error.localizedDescription)")
             return
         }
 
         // ── 4. Locate voxcpmane2-server ──
         let serverBinary = "\(NSHomeDirectory())/.local/bin/voxcpmane2-server"
         guard FileManager.default.fileExists(atPath: serverBinary) else {
-            await setError("voxcpmane2-server not found at \(serverBinary)")
+            setError("voxcpmane2-server not found at \(serverBinary)")
             return
         }
         appendLog("✅ voxcpmane2-server: \(serverBinary)")
 
         // ── 5. Find available port ──
         guard let port = findAvailablePort() else {
-            await setError("No available port found.")
+            setError("No available port found.")
             return
         }
         appendLog("🔌 Using port \(port)")
@@ -269,7 +270,7 @@ final class ServerManager: ObservableObject {
 
         do {
             try proc.run()
-            await setRunning(port: port)
+            setRunning(port: port)
             appendLog("🟢 Server started (PID: \(proc.processIdentifier))")
 
             Task.detached {
@@ -285,7 +286,7 @@ final class ServerManager: ObservableObject {
                 }
             }
         } catch {
-            await setError(error.localizedDescription)
+            setError(error.localizedDescription)
         }
     }
 
@@ -310,7 +311,7 @@ final class ServerManager: ObservableObject {
             proc.terminate()
             Thread.sleep(forTimeInterval: 1)
             if proc.isRunning {
-                proc.forceTerminate()
+                proc.terminate()
             }
         }
         process = nil
