@@ -38,8 +38,8 @@ struct MenuBarView: View {
                 if case .running = serverManager.status {
                     Button(L10n.openVoxBox) { serverManager.openInBrowser() }
 
-                    // Open Recordings Folder — always visible
-                    Button(L10n.openRecordingsFolderMenu) {
+                    // Open Output Folder — always visible
+                    Button(L10n.openOutputFolderMenu) {
                         serverManager.openRecordingsFolder()
                     }
 
