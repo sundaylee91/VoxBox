@@ -533,7 +533,6 @@ enum VoxBoxHTML {
         margin-top: 2px;
     }
 
-    /* Create Voice panel needs more height */
     .advanced-panel.create-voice-panel.open {
         max-height: 400px;
     }
@@ -1078,7 +1077,10 @@ enum VoxBoxHTML {
         createVoiceHint: IS_CHINESE ? '选择参考音频文件，输入名称后点击创建' : 'Select a reference audio file, enter a name, and click Create',
         noAudioFile: IS_CHINESE ? '请先选择参考音频文件' : 'Please select a reference audio file first',
         noVoiceName: IS_CHINESE ? '请输入语音名称' : 'Please enter a voice name',
-        customVoiceBadge: IS_CHINESE ? '自定义' : 'custom'
+        customVoiceBadge: IS_CHINESE ? '自定义' : 'custom',
+        // Dropdown separators
+        sepCustomVoices: IS_CHINESE ? '──── 自定义语音 ────' : '──── Custom Voices ────',
+        sepPresets: IS_CHINESE ? '──── 参数预设 ────' : '──── Parameter Presets ────'
     };
 
     function _(key) { return L10N[key] || key; }
@@ -1159,13 +1161,13 @@ enum VoxBoxHTML {
     var lastAudioBlob = null;
     var lastText = '';
     var availableVoices = [];
-    var serverCustomVoices = [];  // server-side custom voice names (from /voices API)
+    var serverCustomVoices = [];
     var playerSeeking = false;
     var currentBlobURL = null;
-    var localStoragePresets = [];  // localStorage parameter snapshots
+    var localStoragePresets = [];
     var LOCAL_PRESETS_KEY = 'voxbox_custom_voices';
     var _suppressVoiceChange = false;
-    var selectedAudioPath = '';  // path picked via native file picker
+    var selectedAudioPath = '';
     var isCreatingVoice = false;
 
     // ── Format time ──
@@ -1176,7 +1178,7 @@ enum VoxBoxHTML {
         return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
     }
 
-    // ── LocalStorage Presets (parameter snapshots, separate from server voices) ──
+    // ── LocalStorage Presets ──
     function loadLocalPresets() {
         try {
             var raw = localStorage.getItem(LOCAL_PRESETS_KEY);
@@ -1251,15 +1253,11 @@ enum VoxBoxHTML {
         return voiceSelect.getAttribute('data-is-server-custom') === 'true';
     }
 
-    function isLocalPresetSelected() {
-        return voiceSelect.getAttribute('data-is-custom') === 'true';
-    }
-
     function updateDeleteButton() {
         btnDeleteServerVoice.disabled = !isServerCustomSelected();
     }
 
-    // Rebuild voice dropdown
+    // Rebuild voice dropdown with localized separators
     function refreshVoiceDropdown() {
         var sel = voiceSelect;
         var currentVal = sel.value;
@@ -1270,7 +1268,6 @@ enum VoxBoxHTML {
         try {
             sel.innerHTML = '';
 
-            // Default option
             var defaultOpt = document.createElement('option');
             defaultOpt.value = '';
             defaultOpt.textContent = _('defaultVoice');
@@ -1278,18 +1275,18 @@ enum VoxBoxHTML {
 
             // Server system voices
             availableVoices.forEach(function(name) {
-                if (serverCustomVoices.indexOf(name) >= 0) return;  // custom voices shown separately
+                if (serverCustomVoices.indexOf(name) >= 0) return;
                 var opt = document.createElement('option');
                 opt.value = name;
                 opt.textContent = name;
                 sel.appendChild(opt);
             });
 
-            // Server custom voices (separated)
+            // Server custom voices
             if (serverCustomVoices.length > 0) {
                 var sep1 = document.createElement('option');
                 sep1.value = '';
-                sep1.textContent = '──── 自定义语音 ────';
+                sep1.textContent = _('sepCustomVoices');
                 sep1.disabled = true;
                 sel.appendChild(sep1);
 
@@ -1301,11 +1298,11 @@ enum VoxBoxHTML {
                 });
             }
 
-            // LocalStorage presets (parameter snapshots)
+            // LocalStorage presets
             if (localStoragePresets.length > 0) {
                 var sep2 = document.createElement('option');
                 sep2.value = '';
-                sep2.textContent = '──── 参数预设 ────';
+                sep2.textContent = _('sepPresets');
                 sep2.disabled = true;
                 sel.appendChild(sep2);
 
@@ -1349,7 +1346,6 @@ enum VoxBoxHTML {
 
         var val = voiceSelect.value;
         if (val && val.indexOf('__preset__') === 0) {
-            // LocalStorage parameter preset
             var idx = parseInt(val.substring('__preset__'.length));
             voiceSelect.setAttribute('data-is-custom', 'true');
             voiceSelect.setAttribute('data-custom-idx', String(idx));
@@ -1363,11 +1359,9 @@ enum VoxBoxHTML {
                 voiceSelect.setAttribute('data-is-server-custom', 'false');
             }
         } else if (val && serverCustomVoices.indexOf(val) >= 0) {
-            // Server custom voice
             voiceSelect.setAttribute('data-is-custom', 'false');
             voiceSelect.setAttribute('data-is-server-custom', 'true');
         } else {
-            // System voice or default
             voiceSelect.setAttribute('data-is-custom', 'false');
             voiceSelect.setAttribute('data-is-server-custom', 'false');
         }
@@ -1431,7 +1425,7 @@ enum VoxBoxHTML {
         })
         .then(function() {
             showToast(_('voiceDeleted') + ': ' + voiceName);
-            loadVoices();  // refresh list
+            loadVoices();
         })
         .catch(function(err) {
             showToast(_('errorPrefix') + err.message);
@@ -1452,11 +1446,9 @@ enum VoxBoxHTML {
         }
     });
 
-    // Called from Swift after file is picked
     window.__voxboxOnAudioFilePicked = function(filePath) {
         selectedAudioPath = filePath;
         if (filePath) {
-            // Show just the filename
             var parts = filePath.split('/');
             audioPathDisplay.textContent = '📁 ' + (parts[parts.length - 1] || filePath);
             audioPathDisplay.style.color = 'var(--text-secondary)';
@@ -1525,14 +1517,12 @@ enum VoxBoxHTML {
             createVoiceStatus.textContent = _('voiceCreated') + ': ' + name;
             showToast(_('voiceCreated') + ': ' + name);
 
-            // Reset form
             newVoiceNameInput.value = '';
             newVoiceTextInput.value = '';
             selectedAudioPath = '';
             audioPathDisplay.textContent = '';
             newVoiceReplaceCheckbox.checked = false;
 
-            // Refresh voice list and select new voice
             loadVoices().then(function() {
                 _suppressVoiceChange = true;
                 try {
@@ -1545,7 +1535,6 @@ enum VoxBoxHTML {
                 updateDeleteButton();
             });
 
-            // Collapse create voice panel after a moment
             setTimeout(function() {
                 createVoicePanel.classList.remove('open');
                 createVoiceToggle.classList.remove('open');
@@ -1570,7 +1559,7 @@ enum VoxBoxHTML {
         createVoiceToggle.classList.toggle('open', isOpen);
     });
 
-    // ── Load available voices (server-side) ──
+    // ── Load available voices ──
     function loadVoices() {
         voiceSelect.innerHTML = '<option value="">' + _('loadingVoices') + '</option>';
         voiceSelect.disabled = true;
@@ -1593,7 +1582,6 @@ enum VoxBoxHTML {
                     });
                 }
 
-                // Track which voices are custom (server-side)
                 if (data && data.custom_voices && Array.isArray(data.custom_voices)) {
                     serverCustomVoices = data.custom_voices;
                 }
@@ -1841,7 +1829,6 @@ enum VoxBoxHTML {
         var voice = voiceSelect.value;
         var voiceMode = voiceModeSelect.value;
 
-        // Strip preset prefix
         if (voice && voice.indexOf('__preset__') === 0) {
             voice = '';
         }
@@ -2304,7 +2291,6 @@ struct WebView: NSViewRepresentable {
 
             panel.begin { [weak self] response in
                 guard response == .OK, let url = panel.url else {
-                    // User cancelled — send empty path back
                     self?.sendAudioPathToJS("")
                     return
                 }
@@ -2315,7 +2301,6 @@ struct WebView: NSViewRepresentable {
         }
 
         private func sendAudioPathToJS(_ path: String) {
-            // Escape backslashes and quotes for safe JS injection
             let escaped = path
                 .replacingOccurrences(of: "\\", with: "\\\\")
                 .replacingOccurrences(of: "'", with: "\\'")
