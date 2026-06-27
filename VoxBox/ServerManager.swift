@@ -8,6 +8,7 @@
 
 import Foundation
 import AppKit
+import UniformTypeIdentifiers
 
 // MARK: - Audio Format
 
@@ -20,6 +21,13 @@ enum AudioFormat: String, CaseIterable {
         switch self {
         case .wav: return "audio/wav"
         case .mp3: return "audio/mpeg"
+        }
+    }
+
+    var utType: UTType {
+        switch self {
+        case .wav: return .wav
+        case .mp3: return .mp3
         }
     }
 }
@@ -140,16 +148,17 @@ final class ServerManager: ObservableObject {
             self.outputFolderPath = ""
         }
 
-        // Ensure output folder exists
-        try? FileManager.default.createDirectory(at: outputFolder, withIntermediateDirectories: true)
-
-        // Restore saved format preference
+        // Restore saved format preference (must be before any self usage)
         if let saved = UserDefaults.standard.string(forKey: "VoxBox.preferredFormat"),
            let fmt = AudioFormat(rawValue: saved) {
             self.preferredFormat = fmt
         } else {
             self.preferredFormat = .wav
         }
+
+        // Now all stored properties are initialized — safe to use self
+        // Ensure output folder exists
+        try? FileManager.default.createDirectory(at: outputFolder, withIntermediateDirectories: true)
 
         try? FileManager.default.createDirectory(
             at: base,
@@ -410,16 +419,13 @@ final class ServerManager: ObservableObject {
         savePanel.nameFieldStringValue = filenameFromText(clip.text, format: effectiveFormat)
 
         if mp3Available {
-            savePanel.allowedFileTypes = [effectiveFormat.fileExtension,
-                                           effectiveFormat == .wav ? "mp3" : "wav"]
+            savePanel.allowedContentTypes = [effectiveFormat.utType,
+                                              effectiveFormat == .wav ? .mp3 : .wav]
         } else {
-            savePanel.allowedFileTypes = ["wav"]
+            savePanel.allowedContentTypes = [.wav]
         }
         savePanel.canCreateDirectories = true
         savePanel.allowsOtherFileTypes = false
-
-        let data = clip.data
-        let text = clip.text
 
         savePanel.begin { [weak self] response in
             guard response == .OK, let url = savePanel.url, let self = self else { return }
@@ -445,9 +451,9 @@ final class ServerManager: ObservableObject {
                     let outputData: Data
                     switch chosenFormat {
                     case .wav:
-                        outputData = data
+                        outputData = clip.data
                     case .mp3:
-                        outputData = try self.convertToMP3(wavData: data)
+                        outputData = try self.convertToMP3(wavData: clip.data)
                     }
 
                     try outputData.write(to: url)
