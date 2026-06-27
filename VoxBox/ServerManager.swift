@@ -956,40 +956,24 @@ final class ServerManager: ObservableObject {
 
     // MARK: - Find / Install uv
 
-    /// Search for uv in common locations.
-    /// Returns an executable absolute path, or "" if not found.
-    /// Only returns paths that are actually executable (isExecutableFile)
-    /// to avoid the sandbox deadloop where /opt/homebrew/bin/uv exists
-    /// but cannot be executed from within the sandbox.
+    /// Search for uv in common locations. Returns an absolute path, or "" if not found.
     private static func findUv() -> String {
-        // Prefer user-local installs first (sandbox-friendly)
-        let userCandidates = [
+        let candidates = [
+            "/opt/homebrew/bin/uv",
+            "/usr/local/bin/uv",
             "\(NSHomeDirectory())/.local/bin/uv",
             "\(NSHomeDirectory())/.cargo/bin/uv",
         ]
-        for path in userCandidates {
-            if FileManager.default.isExecutableFile(atPath: path) {
+        for path in candidates {
+            if FileManager.default.fileExists(atPath: path) {
                 return path
             }
         }
-
-        // Then try system paths
-        let systemCandidates = [
-            "/opt/homebrew/bin/uv",
-            "/usr/local/bin/uv",
-        ]
-        for path in systemCandidates {
-            if FileManager.default.isExecutableFile(atPath: path) {
-                return path
-            }
-        }
-
-        // Fallback: which
         let which = try? runSync("/bin/sh", args: ["-c", "command -v uv 2>/dev/null"])
         if let p = which?.trimmingCharacters(in: .whitespacesAndNewlines),
            !p.isEmpty,
            p.hasPrefix("/"),
-           FileManager.default.isExecutableFile(atPath: p) {
+           FileManager.default.fileExists(atPath: p) {
             return p
         }
         return ""
@@ -1006,8 +990,6 @@ final class ServerManager: ObservableObject {
         // Inherit current process environment to preserve HOME, USER, etc.
         // Only add common bin directories to PATH if missing.
         var env = ProcessInfo.processInfo.environment
-        // Explicitly set HOME to NSHomeDirectory() in case sandbox masks it
-        env["HOME"] = NSHomeDirectory()
         var path = env["PATH"] ?? "/usr/bin:/bin"
         for add in ["/opt/homebrew/bin", "\(NSHomeDirectory())/.local/bin", "\(NSHomeDirectory())/.cargo/bin"] {
             if !path.contains(add) {
@@ -1033,24 +1015,14 @@ final class ServerManager: ObservableObject {
         }
 
         // Check both possible install locations
-        let home = NSHomeDirectory()
         let installCandidates = [
-            "\(home)/.local/bin/uv",
-            "\(home)/.cargo/bin/uv",
+            "\(NSHomeDirectory())/.local/bin/uv",
+            "\(NSHomeDirectory())/.cargo/bin/uv",
         ]
         for candidate in installCandidates {
-            appendLog("🔍 Checking \(candidate)...")
             if FileManager.default.isExecutableFile(atPath: candidate) {
                 return candidate
             }
-        }
-
-        // Debug: list what's in .local/bin
-        let localBin = "\(home)/.local/bin"
-        if let contents = try? FileManager.default.contentsOfDirectory(atPath: localBin) {
-            appendLog("📂 Contents of \(localBin): \(contents.joined(separator: ", "))")
-        } else {
-            appendLog("⚠️ Cannot read \(localBin)")
         }
 
         throw ServerError.uvNotFoundAfterInstall
