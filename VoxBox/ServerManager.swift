@@ -116,7 +116,7 @@ final class ServerManager: ObservableObject {
     private var healthCheckTask: Task<Void, Never>?
 
     private let appSupportDir: URL
-    private let uvPath: String
+    private var cachedUvPath: String
     private let isM1Series: Bool
     private let isAppleSilicon: Bool
 
@@ -135,7 +135,7 @@ final class ServerManager: ObservableObject {
         ).first!.appendingPathComponent("VoxBox")
 
         self.appSupportDir = base
-        self.uvPath = ServerManager.findUv()
+        self.cachedUvPath = ""  // will be resolved on first start
         self.isAppleSilicon = ServerManager.isAppleSiliconMac()
         self.isM1Series = ServerManager.isM1Series()
 
@@ -207,8 +207,8 @@ final class ServerManager: ObservableObject {
         logs.removeAll()
         healthCheckTask?.cancel()
 
-        Task.detached(priority: .userInitiated) {
-            await self.performStart()
+        Task.detached(priority: .userInitiated) { [weak self] in
+            await self?.performStart()
         }
     }
 
@@ -665,34 +665,21 @@ final class ServerManager: ObservableObject {
     // MARK: - Start Sequence
 
     private func performStart() async {
-        // Resolve uv: use cached path if available (same as original logic),
-        // otherwise try to install. Re-validate that the file exists at runtime.
+        // ── Resolve uv ──
+        // Always search fresh — do NOT rely on a cached path that may be stale
+        // or point to a system binary the sandbox can't execute.
         let uv: String
-        if !uvPath.isEmpty,
-           FileManager.default.isExecutableFile(atPath: uvPath) {
-            uv = uvPath
+        let found = ServerManager.findUv()
+        if !found.isEmpty {
+            uv = found
+            cachedUvPath = uv
             appendLog("✅ Found uv at \(uv)")
-        } else if !uvPath.isEmpty {
-            appendLog("⚠️ Cached uv path exists but is not executable: \(uvPath) — will search/install")
-            let found = ServerManager.findUv()
-            if !found.isEmpty,
-               FileManager.default.isExecutableFile(atPath: found) {
-                uv = found
-                appendLog("✅ Found working uv at \(uv)")
-            } else {
-                appendLog("📦 Installing uv package manager…")
-                do {
-                    uv = try await installUv()
-                    appendLog("✅ uv installed at \(uv)")
-                } catch {
-                    setError("Failed to install uv: \(error.localizedDescription)")
-                    return
-                }
-            }
         } else {
             appendLog("📦 Installing uv package manager…")
             do {
-                uv = try await installUv()
+                // Run install off the main actor to avoid UI freeze
+                uv = try await installUvOffMainActor()
+                cachedUvPath = uv
                 appendLog("✅ uv installed at \(uv)")
             } catch {
                 setError("Failed to install uv: \(error.localizedDescription)")
@@ -700,12 +687,14 @@ final class ServerManager: ObservableObject {
             }
         }
 
+        // ── Find Python ──
         guard let pythonPath = ServerManager.findSystemPython() else {
             setError("Python >=3.10,<3.13 not found. Install via Homebrew: brew install python@3.12")
             return
         }
         appendLog("✅ Found \(pythonPath)")
 
+        // ── uv tool install voxcpmane2 ──
         let installArgs: [String]
         if isM1Series {
             appendLog("🍎 M1-series: installing voxcpmane2==0.1.3b1 for --split-base-lm")
@@ -735,7 +724,8 @@ final class ServerManager: ObservableObject {
             if nsErr.domain == "NSCocoaErrorDomain" && nsErr.code == 4 {
                 appendLog("⚠️ uv binary disappeared — attempting reinstall…")
                 do {
-                    let freshUv = try await installUv()
+                    let freshUv = try await installUvOffMainActor()
+                    cachedUvPath = freshUv
                     appendLog("✅ Reinstalled uv at: \(freshUv)")
                     let output = try await runAsync(freshUv, args: installArgs)
                     appendLog(output)
@@ -749,6 +739,7 @@ final class ServerManager: ObservableObject {
             }
         }
 
+        // ── Locate voxcpmane2-server ──
         let serverBinary = "\(NSHomeDirectory())/.local/bin/voxcpmane2-server"
         guard FileManager.default.fileExists(atPath: serverBinary) else {
             setError("voxcpmane2-server not found at \(serverBinary)")
@@ -756,12 +747,14 @@ final class ServerManager: ObservableObject {
         }
         appendLog("✅ voxcpmane2-server: \(serverBinary)")
 
+        // ── Find port ──
         guard let port = findAvailablePort() else {
             setError("No available port found.")
             return
         }
         appendLog("🔌 Using port \(port)")
 
+        // ── Launch server ──
         var serverArgs = [
             "--host", "127.0.0.1",
             "--port", "\(port)",
@@ -954,18 +947,20 @@ final class ServerManager: ObservableObject {
         return brand.hasPrefix("Apple M1")
     }
 
-    // MARK: - Find / Install uv
+    // MARK: - Find uv
 
     /// Search for uv in common locations.
     /// Returns an executable absolute path, or "" if not found.
     /// Only returns paths that are actually executable (isExecutableFile)
     /// to avoid the sandbox deadloop where /opt/homebrew/bin/uv exists
     /// but cannot be executed from within the sandbox.
-    private static func findUv() -> String {
-        // Prefer user-local installs first (sandbox-friendly)
+    static func findUv() -> String {
+        let home = NSHomeDirectory()
+
+        // Priority 1: user-local installs (sandbox-friendly, always executable)
         let userCandidates = [
-            "\(NSHomeDirectory())/.local/bin/uv",
-            "\(NSHomeDirectory())/.cargo/bin/uv",
+            "\(home)/.local/bin/uv",
+            "\(home)/.cargo/bin/uv",
         ]
         for path in userCandidates {
             if FileManager.default.isExecutableFile(atPath: path) {
@@ -973,7 +968,7 @@ final class ServerManager: ObservableObject {
             }
         }
 
-        // Then try system paths
+        // Priority 2: system paths (may be restricted by sandbox)
         let systemCandidates = [
             "/opt/homebrew/bin/uv",
             "/usr/local/bin/uv",
@@ -984,7 +979,7 @@ final class ServerManager: ObservableObject {
             }
         }
 
-        // Fallback: which
+        // Priority 3: which
         let which = try? runSync("/bin/sh", args: ["-c", "command -v uv 2>/dev/null"])
         if let p = which?.trimmingCharacters(in: .whitespacesAndNewlines),
            !p.isEmpty,
@@ -995,62 +990,128 @@ final class ServerManager: ObservableObject {
         return ""
     }
 
-    /// Download and install uv via the official install script.
-    /// Inherits the current process environment so HOME is preserved.
-    private func installUv() async throws -> String {
+    // MARK: - Install uv
+
+    /// Runs the uv install script on a background queue so the UI doesn't freeze,
+    /// then parses output to locate the binary, with retries.
+    private func installUvOffMainActor() async throws -> String {
         let scriptURL = "https://astral.sh/uv/install.sh"
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = ["-c", "curl -LsSf \(scriptURL) | sh"]
-
-        // Inherit current process environment to preserve HOME, USER, etc.
-        // Only add common bin directories to PATH if missing.
-        var env = ProcessInfo.processInfo.environment
-        // Explicitly set HOME to NSHomeDirectory() in case sandbox masks it
-        env["HOME"] = NSHomeDirectory()
-        var path = env["PATH"] ?? "/usr/bin:/bin"
-        for add in ["/opt/homebrew/bin", "\(NSHomeDirectory())/.local/bin", "\(NSHomeDirectory())/.cargo/bin"] {
-            if !path.contains(add) {
-                path = "\(add):\(path)"
-            }
-        }
-        env["PATH"] = path
-        process.environment = env
-
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-
-        try process.run()
-        process.waitUntilExit()
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: data, encoding: .utf8) ?? ""
-        appendLog(output)
-
-        guard process.terminationStatus == 0 else {
-            throw ServerError.uvInstallFailed(output)
-        }
-
-        // Check both possible install locations
         let home = NSHomeDirectory()
-        let installCandidates = [
-            "\(home)/.local/bin/uv",
-            "\(home)/.cargo/bin/uv",
-        ]
-        for candidate in installCandidates {
-            appendLog("🔍 Checking \(candidate)...")
-            if FileManager.default.isExecutableFile(atPath: candidate) {
-                return candidate
+
+        // Capture the result from a background queue
+        let result: (exitCode: Int32, output: String) = try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/bin/bash")
+                process.arguments = ["-c", "curl -LsSf \(scriptURL) | sh"]
+
+                var env = ProcessInfo.processInfo.environment
+                env["HOME"] = home
+                // Build a robust PATH
+                var path = env["PATH"] ?? "/usr/bin:/bin"
+                for add in ["/opt/homebrew/bin", "\(home)/.local/bin", "\(home)/.cargo/bin"] {
+                    if !path.contains(add) {
+                        path = "\(add):\(path)"
+                    }
+                }
+                env["PATH"] = path
+                process.environment = env
+
+                let pipe = Pipe()
+                process.standardOutput = pipe
+                process.standardError = pipe
+
+                do {
+                    try process.run()
+                    process.waitUntilExit()
+                    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                    let output = String(data: data, encoding: .utf8) ?? ""
+                    continuation.resume(returning: (process.terminationStatus, output))
+                } catch {
+                    continuation.resume(throwing: error)
+                }
             }
         }
 
-        // Debug: list what's in .local/bin
+        // Back on MainActor — safe to log
+        appendLog(result.output.trimmingCharacters(in: .whitespacesAndNewlines))
+
+        guard result.exitCode == 0 else {
+            throw ServerError.uvInstallFailed(result.output)
+        }
+
+        // Parse the install output to find the EXACT install directory
+        // The official script outputs: "installing to <path>"
+        var parsedInstallDir: String?
+        for line in result.output.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("installing to ") {
+                parsedInstallDir = trimmed
+                    .replacingOccurrences(of: "installing to ", with: "")
+                    .trimmingCharacters(in: .whitespaces)
+                break
+            }
+        }
+
+        // Build candidate list in priority order
+        var candidates: [String] = []
+        if let dir = parsedInstallDir {
+            candidates.append("\(dir)/uv")
+        }
+        candidates.append("\(home)/.local/bin/uv")
+        candidates.append("\(home)/.cargo/bin/uv")
+
+        // Retry loop: the filesystem may need a moment after install
+        for attempt in 0..<6 {
+            for candidate in candidates {
+                if FileManager.default.isExecutableFile(atPath: candidate) {
+                    appendLog("✅ Located uv at: \(candidate)")
+                    return candidate
+                }
+            }
+
+            if attempt < 5 {
+                appendLog("⏳ uv not found yet, retrying (\(attempt + 1)/6)…")
+                try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+            }
+        }
+
+        // Debug: list what's in the parsed install dir
+        if let dir = parsedInstallDir {
+            appendLog("📂 Contents of \(dir):")
+            if let contents = try? FileManager.default.contentsOfDirectory(atPath: dir) {
+                for item in contents {
+                    let full = "\(dir)/\(item)"
+                    var flags = ""
+                    if FileManager.default.isExecutableFile(atPath: full) { flags += "x" }
+                    if FileManager.default.isReadableFile(atPath: full) { flags += "r" }
+                    appendLog("  [\(flags)] \(item)")
+                }
+            } else {
+                appendLog("  (cannot read directory)")
+            }
+        }
+
+        // Also list ~/.local/bin
         let localBin = "\(home)/.local/bin"
+        appendLog("📂 Contents of \(localBin):")
         if let contents = try? FileManager.default.contentsOfDirectory(atPath: localBin) {
-            appendLog("📂 Contents of \(localBin): \(contents.joined(separator: ", "))")
+            for item in contents {
+                let full = "\(localBin)/\(item)"
+                var flags = ""
+                if FileManager.default.isExecutableFile(atPath: full) { flags += "x" }
+                if FileManager.default.isReadableFile(atPath: full) { flags += "r" }
+                appendLog("  [\(flags)] \(item)")
+            }
         } else {
-            appendLog("⚠️ Cannot read \(localBin)")
+            appendLog("  (cannot read directory — may not exist)")
+        }
+
+        // Last resort: use findUv
+        let found = ServerManager.findUv()
+        if !found.isEmpty {
+            appendLog("✅ findUv() located uv at: \(found)")
+            return found
         }
 
         throw ServerError.uvNotFoundAfterInstall
@@ -1082,35 +1143,41 @@ final class ServerManager: ObservableObject {
         return nil
     }
 
+    /// Find an available port. Tries common ports first for speed,
+    /// then falls back to scanning the full range.
     private func findAvailablePort() -> Int? {
+        // Fast path: try commonly available dev ports
+        let preferred = [8765, 8888, 8890, 8900, 8766, 5000, 3000, 8080, 9090]
+        for port in preferred {
+            if portIsAvailable(port) { return port }
+        }
+        // Full scan
         for port in 1024...65535 {
-            let sock = socket(AF_INET, SOCK_STREAM, 0)
-            guard sock >= 0 else { continue }
-            defer { close(sock) }
-
-            var addr = sockaddr_in()
-            addr.sin_family = sa_family_t(AF_INET)
-            addr.sin_port = UInt16(port).bigEndian
-            addr.sin_addr.s_addr = in_addr_t(bigEndian: 0x7f000001)
-
-            let addrLen = socklen_t(MemoryLayout<sockaddr_in>.size)
-            let result = withUnsafePointer(to: &addr) {
-                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                    bind(sock, $0, addrLen)
-                }
-            }
-            if result == 0 {
-                return port
-            }
+            if portIsAvailable(port) { return port }
         }
         return nil
     }
 
-    // MARK: - Status updates
+    private func portIsAvailable(_ port: Int) -> Bool {
+        let sock = socket(AF_INET, SOCK_STREAM, 0)
+        guard sock >= 0 else { return false }
+        defer { close(sock) }
 
-    private func setRunning(port: Int) {
-        status = .running(port: port)
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = UInt16(port).bigEndian
+        addr.sin_addr.s_addr = in_addr_t(bigEndian: 0x7f000001)
+
+        let addrLen = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let result = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                bind(sock, $0, addrLen)
+            }
+        }
+        return result == 0
     }
+
+    // MARK: - Status updates
 
     private func setError(_ message: String) {
         status = .error(message)
