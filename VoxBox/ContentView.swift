@@ -54,13 +54,18 @@ struct ContentView: View {
                     Spacer()
                     HStack(spacing: 5) {
                         StatusBadge(status: serverManager.status)
-                        Button { showSettings.toggle() } label: {
-                            Image(systemName: "gearshape")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .help(L10n.settings)
+
+                        // Settings gear — using onTapGesture + Image to avoid
+                        // macOS accentColor blue tint that .buttonStyle(.plain) inherits.
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 20, height: 20)
+                            .contentShape(Rectangle())
+                            .onTapGesture { showSettings.toggle() }
+                            .help(L10n.settings)
+                            .accessibilityAddTraits(.isButton)
+                            .accessibilityLabel(L10n.settings)
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
@@ -117,7 +122,7 @@ struct WarmingUpView: View {
                     .font(.headline)
                     .onReceive(timer) { _ in dots = (dots + 1) % 4 }
                 Text(L10n.loadingCoreML)
-                    .font(.subheadline).foregroundColor(.secondary)
+                    .font(.subheadline).foregroundStyle(.secondary)
                 Text("Port: \(port)")
                     .font(.caption)
                     .foregroundStyle(.tertiary)
@@ -141,7 +146,7 @@ struct StatusBadge: View {
             Circle().fill(statusColor).frame(width: 5, height: 5)
             Text(statusLabel)
                 .font(.system(size: 10, weight: .medium))
-                .foregroundColor(.primary)
+                .foregroundStyle(.primary)
         }
         .padding(.horizontal, 6).padding(.vertical, 2)
         .background(
