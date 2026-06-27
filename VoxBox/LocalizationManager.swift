@@ -60,6 +60,7 @@ final class LocalizationManager: ObservableObject {
 
 /// All user-facing strings. Reads language from LocalizationManager.shared.
 /// Views MUST observe LocalizationManager to re-render on language change.
+@MainActor
 struct L10n {
     private static var zh: Bool { LocalizationManager.shared.isChinese }
 
