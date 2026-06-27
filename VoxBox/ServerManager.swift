@@ -47,6 +47,9 @@ final class ServerManager: ObservableObject {
 
     @Published var status: ServerStatus = .stopped
     @Published var logs: [LogEntry] = []
+    
+    /// Last captured audio data from the web UI (ready for save).
+    @Published var lastAudioData: Data?
 
     private var process: Process?
     private var stdoutPipe: Pipe?
@@ -130,6 +133,7 @@ final class ServerManager: ObservableObject {
         }
         process = nil
         status = .stopped
+        lastAudioData = nil
         appendLog("⏹ Server stopped.")
     }
 
@@ -152,6 +156,36 @@ final class ServerManager: ObservableObject {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(logOutput, forType: .string)
         appendLog("📋 Logs copied to clipboard")
+    }
+    
+    // MARK: - Save Audio
+    
+    /// Opens a native NSSavePanel and writes the last captured audio data to disk.
+    func saveAudio() {
+        guard let data = lastAudioData else {
+            appendLog("⚠️ No audio data to save.")
+            return
+        }
+        
+        let savePanel = NSSavePanel()
+        savePanel.title = "Save Generated Audio"
+        savePanel.nameFieldStringValue = "voxbox_output.wav"
+        savePanel.allowedFileTypes = ["wav"]
+        savePanel.canCreateDirectories = true
+        
+        savePanel.begin { [weak self] response in
+            guard response == .OK, let url = savePanel.url else { return }
+            do {
+                try data.write(to: url)
+                Task { @MainActor [weak self] in
+                    self?.appendLog("💾 Audio saved to \(url.path)")
+                }
+            } catch {
+                Task { @MainActor [weak self] in
+                    self?.appendLog("❌ Failed to save audio: \(error.localizedDescription)")
+                }
+            }
+        }
     }
 
     // MARK: - Start Sequence

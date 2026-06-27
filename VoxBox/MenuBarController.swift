@@ -32,6 +32,13 @@ struct MenuBarView: View {
                 if case .error = serverManager.status { Button("Retry") { serverManager.start() } }
                 if case .running = serverManager.status {
                     Button("Open VoxBox") { serverManager.openInBrowser() }
+                    
+                    if serverManager.lastAudioData != nil {
+                        Button("💾 Save Audio…") {
+                            serverManager.saveAudio()
+                        }
+                    }
+                    
                     Button("Restart Server") { serverManager.restart() }
                     Button("Stop Server") { serverManager.stop() }
                 }

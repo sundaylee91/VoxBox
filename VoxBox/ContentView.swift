@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject var serverManager: ServerManager
     @State private var showSettings = false
+    @State private var showSaveBar = false
     
     var body: some View {
         ZStack {
@@ -22,7 +23,29 @@ struct ContentView: View {
                 case .warmingUp(let port):
                     WarmingUpView(port: port)
                 case .running:
-                    WebView(url: URL(string: "http://127.0.0.1:\(serverManager.port)")!)
+                    ZStack(alignment: .bottom) {
+                        WebView(
+                            url: URL(string: "http://127.0.0.1:\(serverManager.port)")!,
+                            onAudioCaptured: { data in
+                                serverManager.lastAudioData = data
+                                showSaveBar = true
+                            }
+                        )
+                        
+                        if showSaveBar {
+                            SaveAudioBar(
+                                onSave: {
+                                    serverManager.saveAudio()
+                                    showSaveBar = false
+                                },
+                                onDismiss: {
+                                    showSaveBar = false
+                                }
+                            )
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                        }
+                    }
+                    .animation(.easeInOut(duration: 0.25), value: showSaveBar)
                 case .error(let message):
                     ErrorView(
                         message: message,
@@ -49,7 +72,54 @@ struct ContentView: View {
         .sheet(isPresented: $showSettings) {
             SettingsView().environmentObject(serverManager)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .saveAudio)) { _ in
+            guard serverManager.lastAudioData != nil else { return }
+            serverManager.saveAudio()
+            showSaveBar = false
+        }
     }
+}
+
+// MARK: - Save Audio Bar
+
+struct SaveAudioBar: View {
+    let onSave: () -> Void
+    let onDismiss: () -> Void
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "waveform.circle.fill")
+                .font(.system(size: 18))
+                .foregroundColor(.green)
+            Text("Audio generated!")
+                .font(.system(size: 13, weight: .medium))
+            Spacer()
+            Button("Save to Mac…") { onSave() }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            Button { onDismiss() } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 16))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Dismiss")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(.ultraThinMaterial)
+        )
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
+    }
+}
+
+// MARK: - Notification Name
+
+extension Notification.Name {
+    static let saveAudio = Notification.Name("VoxBox.saveAudio")
 }
 
 // MARK: - Warming Up View
