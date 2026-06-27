@@ -21,18 +21,36 @@ struct ErrorView: View {
                 .font(.title2).fontWeight(.semibold)
 
             VStack(spacing: 6) {
+                // Error message — now selectable/copyable
                 Text(message)
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 40)
                     .lineLimit(showDetails ? nil : 3)
+                    .textSelection(.enabled)
+
+                // Quick copy button next to the error
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(message, forType: .string)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "doc.on.doc")
+                        Text(L10n.copyError)
+                    }
+                    .font(.caption)
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .help(L10n.copyError)
 
                 if message.contains("Python") {
                     HStack(spacing: 6) {
                         Image(systemName: "terminal").font(.caption)
                         Text(L10n.installPython)
                             .font(.caption).foregroundColor(.blue)
+                            .textSelection(.enabled)
                     }
                     .padding(.top, 4)
                 }
@@ -79,15 +97,30 @@ struct ErrorView: View {
             if showDetails {
                 VStack(alignment: .leading, spacing: 10) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("ERROR MESSAGE")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(.secondary)
+                        HStack {
+                            Text("ERROR MESSAGE")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            // Copy button in details panel
+                            Button {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(message, forType: .string)
+                            } label: {
+                                Image(systemName: "doc.on.doc")
+                                    .font(.caption)
+                            }
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(.secondary)
+                            .help(L10n.copyError)
+                        }
 
                         ScrollView {
                             Text(message)
                                 .font(.system(.caption, design: .monospaced))
-                                .foregroundColor(.primary)
+                                .foregroundStyle(.primary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                                .textSelection(.enabled)
                         }
                         .frame(maxHeight: 160)
                         .padding(10)
@@ -99,13 +132,14 @@ struct ErrorView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("SERVER LOG")
                                 .font(.system(size: 10, weight: .bold))
-                                .foregroundColor(.secondary)
+                                .foregroundStyle(.secondary)
 
                             ScrollView {
                                 Text(serverManager.logOutput)
                                     .font(.system(.caption, design: .monospaced))
-                                    .foregroundColor(.primary)
+                                    .foregroundStyle(.primary)
                                     .frame(maxWidth: .infinity, alignment: .leading)
+                                    .textSelection(.enabled)
                             }
                             .frame(maxHeight: 200)
                             .padding(10)
