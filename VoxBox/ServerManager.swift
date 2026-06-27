@@ -116,6 +116,7 @@ final class ServerManager: ObservableObject {
     private var healthCheckTask: Task<Void, Never>?
 
     private let appSupportDir: URL
+    private let uvPath: String
     private let isM1Series: Bool
     private let isAppleSilicon: Bool
 
@@ -134,6 +135,7 @@ final class ServerManager: ObservableObject {
         ).first!.appendingPathComponent("VoxBox")
 
         self.appSupportDir = base
+        self.uvPath = ServerManager.findUv()
         self.isAppleSilicon = ServerManager.isAppleSiliconMac()
         self.isM1Series = ServerManager.isM1Series()
 
@@ -663,15 +665,39 @@ final class ServerManager: ObservableObject {
     // MARK: - Start Sequence
 
     private func performStart() async {
-        // Resolve uv at runtime (with fresh validation, not cached from init)
+        // Resolve uv: use cached path if available (same as original logic),
+        // otherwise try to install. Re-validate that the file exists at runtime.
         let uv: String
-        do {
-            uv = try await resolveUv()
-        } catch {
-            setError("Failed to resolve uv: \(error.localizedDescription)")
-            return
+        if !uvPath.isEmpty,
+           FileManager.default.isExecutableFile(atPath: uvPath) {
+            uv = uvPath
+            appendLog("✅ Found uv at \(uv)")
+        } else if !uvPath.isEmpty {
+            appendLog("⚠️ Cached uv path exists but is not executable: \(uvPath) — will search/install")
+            if let found = ServerManager.findUv(),
+               FileManager.default.isExecutableFile(atPath: found) {
+                uv = found
+                appendLog("✅ Found working uv at \(uv)")
+            } else {
+                appendLog("📦 Installing uv package manager…")
+                do {
+                    uv = try await installUv()
+                    appendLog("✅ uv installed at \(uv)")
+                } catch {
+                    setError("Failed to install uv: \(error.localizedDescription)")
+                    return
+                }
+            }
+        } else {
+            appendLog("📦 Installing uv package manager…")
+            do {
+                uv = try await installUv()
+                appendLog("✅ uv installed at \(uv)")
+            } catch {
+                setError("Failed to install uv: \(error.localizedDescription)")
+                return
+            }
         }
-        appendLog("✅ Using uv at: \(uv)")
 
         guard let pythonPath = ServerManager.findSystemPython() else {
             setError("Python >=3.10,<3.13 not found. Install via Homebrew: brew install python@3.12")
@@ -703,7 +729,7 @@ final class ServerManager: ObservableObject {
             let output = try await runAsync(uv, args: installArgs)
             appendLog(output)
         } catch {
-            // If uv failed because the file doesn't exist, try reinstalling
+            // If uv failed because the file disappeared, try reinstalling once
             let nsErr = error as NSError
             if nsErr.domain == "NSCocoaErrorDomain" && nsErr.code == 4 {
                 appendLog("⚠️ uv binary disappeared — attempting reinstall…")
@@ -927,29 +953,10 @@ final class ServerManager: ObservableObject {
         return brand.hasPrefix("Apple M1")
     }
 
-    // MARK: - Resolve uv (runtime, with full validation)
+    // MARK: - Find / Install uv
 
-    /// Resolves a working uv executable at runtime.
-    /// Tries to find an existing installation first; falls back to downloading uv.
-    /// Validates that the binary is executable before returning.
-    private func resolveUv() async throws -> String {
-        // 1. Try to find an existing uv installation (fresh search every time)
-        if let found = ServerManager.findUv() {
-            appendLog("🔍 Found candidate uv at: \(found)")
-            if ServerManager.isExecutableUv(at: found) {
-                return found
-            } else {
-                appendLog("⚠️ uv exists at \(found) but is NOT executable — will reinstall")
-            }
-        }
-
-        // 2. Not found or not executable — install fresh
-        appendLog("📦 Installing uv package manager (resolveUv)…")
-        return try await installUv()
-    }
-
-    /// Search for uv in common locations. Returns an absolute, existing path, or "" if not found.
-    private static func findUv() -> String? {
+    /// Search for uv in common locations. Returns an absolute path, or "" if not found.
+    private static func findUv() -> String {
         let candidates = [
             "/opt/homebrew/bin/uv",
             "/usr/local/bin/uv",
@@ -961,46 +968,35 @@ final class ServerManager: ObservableObject {
                 return path
             }
         }
-        // Last resort: ask the shell (login shell to pick up PATH)
-        let which = try? runSync("/bin/sh", args: ["-lc", "command -v uv 2>/dev/null"])
+        let which = try? runSync("/bin/sh", args: ["-c", "command -v uv 2>/dev/null"])
         if let p = which?.trimmingCharacters(in: .whitespacesAndNewlines),
            !p.isEmpty,
            p.hasPrefix("/"),
-           FileManager.default.fileExists(atPath: p)
-        {
+           FileManager.default.fileExists(atPath: p) {
             return p
         }
-        return nil
+        return ""
     }
 
-    /// Check whether a path points to an executable uv binary.
-    private static func isExecutableUv(at path: String) -> Bool {
-        guard FileManager.default.isExecutableFile(atPath: path) else {
-            return false
-        }
-        // Double-check by actually running `uv --version`
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: path)
-        proc.arguments = ["--version"]
-        proc.standardOutput = Pipe()
-        proc.standardError = Pipe()
-        do {
-            try proc.run()
-            proc.waitUntilExit()
-            return proc.terminationStatus == 0
-        } catch {
-            return false
-        }
-    }
-
+    /// Download and install uv via the official install script.
+    /// Inherits the current process environment so HOME is preserved.
     private func installUv() async throws -> String {
         let scriptURL = "https://astral.sh/uv/install.sh"
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = ["-c", "curl -LsSf \(scriptURL) | sh"]
-        process.environment = [
-            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:\(NSHomeDirectory())/.local/bin"
-        ]
+
+        // Inherit current process environment to preserve HOME, USER, etc.
+        // Only add common bin directories to PATH if missing.
+        var env = ProcessInfo.processInfo.environment
+        var path = env["PATH"] ?? "/usr/bin:/bin"
+        for add in ["/opt/homebrew/bin", "\(NSHomeDirectory())/.local/bin", "\(NSHomeDirectory())/.cargo/bin"] {
+            if !path.contains(add) {
+                path = "\(add):\(path)"
+            }
+        }
+        env["PATH"] = path
+        process.environment = env
 
         let pipe = Pipe()
         process.standardOutput = pipe
@@ -1017,13 +1013,13 @@ final class ServerManager: ObservableObject {
             throw ServerError.uvInstallFailed(output)
         }
 
-        // Check multiple possible install locations
+        // Check both possible install locations
         let installCandidates = [
             "\(NSHomeDirectory())/.local/bin/uv",
             "\(NSHomeDirectory())/.cargo/bin/uv",
         ]
         for candidate in installCandidates {
-            if ServerManager.isExecutableUv(at: candidate) {
+            if FileManager.default.isExecutableFile(atPath: candidate) {
                 return candidate
             }
         }
