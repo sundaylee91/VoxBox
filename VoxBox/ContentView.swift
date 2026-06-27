@@ -24,7 +24,7 @@ struct ContentView: View {
                     WarmingUpView(port: port)
                 case .running:
                     WebView(
-                        url: URL(string: "http://127.0.0.1:\(serverManager.port)")!,
+                        port: serverManager.port,
                         onAudioCaptured: { data, text in
                             serverManager.captureAudio(data: data, text: text)
                         },

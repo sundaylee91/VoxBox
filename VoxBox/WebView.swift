@@ -2,7 +2,7 @@ import SwiftUI
 import WebKit
 
 struct WebView: NSViewRepresentable {
-    let url: URL
+    let port: Int
     /// (audioData, textUsed)
     var onAudioCaptured: ((Data, String) -> Void)? = nil
     /// User clicked save in the in-page notification
@@ -33,7 +33,7 @@ struct WebView: NSViewRepresentable {
         window.voxbox = {
             platform: 'macOS',
             version: '\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")',
-            getStatus: function() { return '\(url.absoluteString)'; },
+            getStatus: function() { return 'local-frontend'; },
             log: function(msg) { window.webkit.messageHandlers.voxbox.postMessage({type: 'log', message: msg}); }
         };
         """
@@ -41,7 +41,7 @@ struct WebView: NSViewRepresentable {
         userContentController.addUserScript(bridgeUserScript)
         userContentController.add(context.coordinator, name: "voxbox")
 
-        // ── Audio capture + clock icon + compact notification ──
+        // ── Audio capture hook (intercepts fetch to /v1/audio/speech) ──
         let captureScript = createCaptureScript()
         let captureUserScript = WKUserScript(source: captureScript, injectionTime: .atDocumentStart, forMainFrameOnly: true)
         userContentController.addUserScript(captureUserScript)
@@ -53,9 +53,10 @@ struct WebView: NSViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
 
-        context.coordinator.requestedURL = url
-        let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
-        webView.load(request)
+        // ── Load local HTML ──
+        let html = VoxBoxHTML.html(port: port)
+        webView.loadHTMLString(html, baseURL: nil)
+
         return webView
     }
 
@@ -64,17 +65,12 @@ struct WebView: NSViewRepresentable {
         context.coordinator.onSaveRequested = onSaveRequested
         context.coordinator.onSaveHistoryItem = onSaveHistoryItem
         context.coordinator.onOpenRecordingsFolder = onOpenRecordingsFolder
-        guard url != context.coordinator.requestedURL else { return }
-        context.coordinator.requestedURL = url
-        guard !context.coordinator.isLoading else { return }
-        let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
-        webView.load(request)
     }
 
     // MARK: - JS Injection
 
     private func createCaptureScript() -> String {
-        // Read language for JS strings (no extra backslashes—clean interpolation)
+        // Read language for JS strings
         let zh = LocalizationManager.shared.isChinese
         let jsClockTooltip = zh ? "打开输出文件夹" : "Open Output Folder"
         let jsAutoSavedToast = zh ? "🎵 已自动保存" : "🎵 Auto-saved"
@@ -110,53 +106,12 @@ struct WebView: NSViewRepresentable {
         style.id = 'voxbox-styles';
         style.textContent = [
             '@keyframes voxboxSlideIn{from{transform:translateX(-50%) translateY(-12px);opacity:0}to{transform:translateX(-50%) translateY(0);opacity:1}}',
-            '@keyframes voxboxSlideOut{from{transform:translateX(-50%) translateY(0);opacity:1}to{transform:translateX(-50%) translateY(-12px);opacity:0}}',
-            '#voxbox-clock-btn:hover{transform:scale(1.1);box-shadow:0 2px 10px rgba(0,0,0,0.35)}'
+            '@keyframes voxboxSlideOut{from{transform:translateX(-50%) translateY(0);opacity:1}to{transform:translateX(-50%) translateY(-12px);opacity:0}}'
         ].join('');
         document.head.appendChild(style);
     }
 
-    // ── Clock icon button (top-left, smaller & refined) ──
-    function ensureClockButton() {
-        if (document.getElementById('voxbox-clock-btn')) return;
-        injectStyles();
-
-        var btn = document.createElement('button');
-        btn.id = 'voxbox-clock-btn';
-        btn.innerHTML = '🕐';
-        btn.title = '\(jsClockTooltip)';
-        btn.style.cssText = [
-            'position:fixed',
-            'top:12px',
-            'left:12px',
-            'z-index:2147483646',
-            'width:28px',
-            'height:28px',
-            'border-radius:50%',
-            'background:rgba(30,30,46,0.8)',
-            'border:1px solid rgba(255,255,255,0.12)',
-            'cursor:pointer',
-            'font-size:14px',
-            'line-height:28px',
-            'text-align:center',
-            'padding:0',
-            'backdrop-filter:blur(8px)',
-            '-webkit-backdrop-filter:blur(8px)',
-            'transition:transform 0.2s,box-shadow 0.2s',
-            'box-shadow:0 1px 8px rgba(0,0,0,0.2)'
-        ].join(';');
-
-        btn.onclick = function(e) {
-            e.preventDefault(); e.stopPropagation();
-            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.voxbox) {
-                window.webkit.messageHandlers.voxbox.postMessage({type: 'openRecordingsFolder'});
-            }
-        };
-
-        document.body.appendChild(btn);
-    }
-
-    // ── Compact notification (top-center, no save button) ──
+    // ── Compact notification (top-center) ──
     function showNotification(text) {
         var existing = document.getElementById('voxbox-notification');
         if (existing) existing.remove();
@@ -186,7 +141,6 @@ struct WebView: NSViewRepresentable {
             '</button>' +
             '</div>';
 
-        // Position: top-center (avoids status bar overlap at top-right)
         notif.style.cssText = [
             'position:fixed',
             'top:12px',
@@ -283,30 +237,7 @@ struct WebView: NSViewRepresentable {
         };
     }
 
-    // ── Init ──
-    if (document.body) {
-        ensureClockButton();
-    } else {
-        document.addEventListener('DOMContentLoaded', function() {
-            ensureClockButton();
-        });
-    }
-
-    // Re-ensure clock button on DOM changes (SPAs may replace body)
-    var observer = new MutationObserver(function() {
-        if (!document.getElementById('voxbox-clock-btn')) {
-            ensureClockButton();
-        }
-    });
-    if (document.body) {
-        observer.observe(document.body, { childList: true, subtree: true });
-    } else {
-        document.addEventListener('DOMContentLoaded', function() {
-            observer.observe(document.body, { childList: true, subtree: true });
-        });
-    }
-
-    console.log('[VoxBox] Capture bridge ready (auto-save + clock icon)');
+    console.log('[VoxBox] Capture bridge ready (fetch hook + auto-save)');
 })();
 """
     }
@@ -318,7 +249,6 @@ struct WebView: NSViewRepresentable {
         var onSaveRequested: (() -> Void)?
         var onSaveHistoryItem: ((Int) -> Void)?
         var onOpenRecordingsFolder: (() -> Void)?
-        var requestedURL: URL?
         var isLoading = false
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
@@ -327,7 +257,7 @@ struct WebView: NSViewRepresentable {
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             isLoading = false
-            print("✅ WebView loaded: \(webView.url?.absoluteString ?? "unknown")")
+            print("✅ WebView loaded: local frontend")
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -337,16 +267,7 @@ struct WebView: NSViewRepresentable {
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             isLoading = false
-            let nsError = error as NSError
-            if nsError.domain == "WebKitErrorDomain" && nsError.code == 102 {
-                print("⚠️ WebView load interrupted (likely double-load), retrying...")
-                if webView.url == nil, let url = requestedURL {
-                    let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
-                    webView.load(request)
-                }
-            } else {
-                print("⚠️ WebView provisional load failed: \(error.localizedDescription)")
-            }
+            print("⚠️ WebView provisional load failed: \(error.localizedDescription)")
         }
 
         func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
