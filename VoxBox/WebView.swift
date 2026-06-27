@@ -78,7 +78,6 @@ struct WebView: NSViewRepresentable {
         let zh = LocalizationManager.shared.isChinese
         let jsClockTooltip = zh ? "打开输出文件夹" : "Open Output Folder"
         let jsAutoSavedToast = zh ? "🎵 已自动保存" : "🎵 Auto-saved"
-        let jsSaveAs = zh ? "💾" : "💾"
         let jsOpenFolder = zh ? "📂" : "📂"
 
         return """
@@ -86,9 +85,6 @@ struct WebView: NSViewRepresentable {
     'use strict';
     if (window.__voxboxInjected) return;
     window.__voxboxInjected = true;
-
-    // ── Latest clip cache (only need latest for save-as button) ──
-    var latestClip = null; // {data: base64, mimeType: string, text: string, time: string}
 
     // ── Helpers ──
     function arrayBufferToBase64(buffer) {
@@ -160,7 +156,7 @@ struct WebView: NSViewRepresentable {
         document.body.appendChild(btn);
     }
 
-    // ── Compact notification (top-right, refined position) ──
+    // ── Compact notification (top-center, no save button) ──
     function showNotification(text) {
         var existing = document.getElementById('voxbox-notification');
         if (existing) existing.remove();
@@ -184,20 +180,18 @@ struct WebView: NSViewRepresentable {
                 'border-radius:5px;cursor:pointer;font-size:12px;line-height:1;transition:background 0.15s;">' +
                 '\(jsOpenFolder)' +
             '</button>' +
-            '<button id="voxbox-notif-save" title="\(jsSaveAs)" style="padding:2px 5px;background:rgba(255,255,255,0.08);color:#e2e8f0;border:1px solid rgba(255,255,255,0.1);' +
-                'border-radius:5px;cursor:pointer;font-size:12px;line-height:1;transition:background 0.15s;">' +
-                '\(jsSaveAs)' +
-            '</button>' +
             '<button id="voxbox-notif-close" style="padding:1px 3px;background:transparent;color:#94a3b8;' +
                 'border:none;cursor:pointer;font-size:13px;line-height:1;transition:color 0.15s;">' +
                 '✕' +
             '</button>' +
             '</div>';
 
+        // Position: top-center (avoids status bar overlap at top-right)
         notif.style.cssText = [
             'position:fixed',
             'top:12px',
-            'right:12px',
+            'left:50%',
+            'transform:translateX(-50%)',
             'z-index:2147483647',
             'pointer-events:none',
             'animation:voxboxSlideIn 0.25s ease-out'
@@ -207,7 +201,6 @@ struct WebView: NSViewRepresentable {
         injectStyles();
 
         var openBtn = document.getElementById('voxbox-notif-open');
-        var saveBtn = document.getElementById('voxbox-notif-save');
         var closeBtn = document.getElementById('voxbox-notif-close');
 
         openBtn.onmouseenter = function() { openBtn.style.background = 'rgba(255,255,255,0.15)'; };
@@ -217,19 +210,6 @@ struct WebView: NSViewRepresentable {
             if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.voxbox) {
                 window.webkit.messageHandlers.voxbox.postMessage({type: 'openRecordingsFolder'});
             }
-        };
-
-        saveBtn.onmouseenter = function() { saveBtn.style.background = 'rgba(255,255,255,0.15)'; };
-        saveBtn.onmouseleave = function() { saveBtn.style.background = 'rgba(255,255,255,0.08)'; };
-        saveBtn.onclick = function(e) {
-            e.preventDefault(); e.stopPropagation();
-            saveLatestToSwift();
-            saveBtn.style.background = '#22c55e';
-            saveBtn.textContent = '✅';
-            setTimeout(function() {
-                saveBtn.style.background = 'rgba(255,255,255,0.08)';
-                saveBtn.textContent = '\(jsSaveAs)';
-            }, 1500);
         };
 
         closeBtn.onmouseenter = function() { closeBtn.style.color = '#e2e8f0'; };
@@ -251,14 +231,6 @@ struct WebView: NSViewRepresentable {
         setTimeout(function() {
             if (notif.parentNode) notif.parentNode.removeChild(notif);
         }, 250);
-    }
-
-    // ── Send to Swift ──
-    function saveLatestToSwift() {
-        if (!latestClip) return;
-        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.voxbox) {
-            window.webkit.messageHandlers.voxbox.postMessage({type: 'saveAudio'});
-        }
     }
 
     // ── Fetch hook - capture /v1/audio/speech responses ──
@@ -290,7 +262,7 @@ struct WebView: NSViewRepresentable {
                         clone.arrayBuffer().then(function(buffer) {
                             var base64 = arrayBufferToBase64(buffer);
 
-                            // Send to Swift (will auto-save + cache)
+                            // Send to Swift (will auto-save)
                             if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.audioCaptured) {
                                 window.webkit.messageHandlers.audioCaptured.postMessage({
                                     data: base64,
@@ -298,14 +270,6 @@ struct WebView: NSViewRepresentable {
                                     text: inputText
                                 });
                             }
-
-                            // Keep latest clip for save-as button
-                            latestClip = {
-                                data: base64,
-                                mimeType: ct,
-                                text: inputText,
-                                time: new Date().toISOString()
-                            };
 
                             // Show compact notification
                             showNotification(inputText);
