@@ -25,9 +25,22 @@ class ServerManager: ObservableObject {
     private let healthCheckTimeout: TimeInterval = 300.0
     private let healthCheckPath = "/docs"
     
+    // MARK: - Paths
+    
+    /// Dedicated virtual environment inside App Support — isolates us from system Python restrictions.
+    private var venvPath: String {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        return appSupport.appendingPathComponent("VoxBox/venv").path
+    }
+    
+    private var venvPython: String {
+        return (venvPath as NSString).appendingPathComponent("bin/python3")
+    }
+    
     // MARK: - Python Detection
     
-    func findPython() -> String? {
+    /// Find a system Python 3.10–3.12 to bootstrap the venv.
+    func findSystemPython() -> String? {
         let candidates = [
             "/opt/homebrew/bin/python3.12", "/opt/homebrew/bin/python3.11", "/opt/homebrew/bin/python3.10",
             "/usr/local/bin/python3.12", "/usr/local/bin/python3.11", "/usr/local/bin/python3.10",
@@ -66,30 +79,90 @@ class ServerManager: ObservableObject {
         return nil
     }
     
-    // MARK: - Package Installation
+    // MARK: - Virtual Environment Setup
     
-    func ensurePackageInstalled(pythonPath: String) -> Bool {
-        log("📦 Checking voxcpmane2 installation…")
-        let checkProcess = Process()
-        checkProcess.executableURL = URL(fileURLWithPath: pythonPath)
-        checkProcess.arguments = ["-c", "import voxcpmane"]
-        checkProcess.standardOutput = Pipe(); checkProcess.standardError = Pipe()
-        do {
-            try checkProcess.run(); checkProcess.waitUntilExit()
-            if checkProcess.terminationStatus == 0 { log("✅ voxcpmane2 already installed"); return true }
-        } catch { log("⚠️ Import check failed, installing…") }
+    /// Ensure an isolated venv exists with voxcpmane2 installed.
+    /// Returns the venv's python3 path on success, nil on failure.
+    func setupVenv(systemPython: String) -> String? {
+        let fm = FileManager.default
+        let venvPythonPath = self.venvPython
         
-        log("📦 Installing voxcpmane2 via pip…")
-        let installProcess = Process()
-        installProcess.executableURL = URL(fileURLWithPath: pythonPath)
-        installProcess.arguments = ["-m", "pip", "install", "--user", "voxcpmane2"]
+        // ── 1. Create venv if missing ──────────────────────────────
+        if !fm.fileExists(atPath: venvPythonPath) {
+            log("🐍 Creating virtual environment at \(venvPath)…")
+            let create = Process()
+            create.executableURL = URL(fileURLWithPath: systemPython)
+            create.arguments = ["-m", "venv", venvPath]
+            let pipe = Pipe()
+            create.standardOutput = pipe; create.standardError = pipe
+            do {
+                try create.run(); create.waitUntilExit()
+                if create.terminationStatus != 0 {
+                    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                    let err = String(data: data, encoding: .utf8) ?? "(no output)"
+                    log("❌ venv creation failed:\n\(err)")
+                    return nil
+                }
+                log("✅ Virtual environment created")
+            } catch {
+                log("❌ venv creation error: \(error.localizedDescription)")
+                return nil
+            }
+        } else {
+            log("📁 Using existing venv at \(venvPath)")
+        }
+        
+        // ── 2. Upgrade pip inside the venv ────────────────────────
+        log("📦 Upgrading pip in venv…")
+        let upgradePip = runPythonInVenv(args: ["-m", "pip", "install", "--upgrade", "pip", "--quiet"])
+        if !upgradePip.success {
+            log("⚠️ pip upgrade had issues (continuing anyway):\n\(upgradePip.output.prefix(500))")
+        }
+        
+        // ── 3. Check if voxcpmane2 is already installed ───────────
+        let check = runPythonInVenv(args: ["-c", "import voxcpmane; print('ok')"])
+        if check.success && check.output.contains("ok") {
+            log("✅ voxcpmane2 already installed in venv")
+            return venvPythonPath
+        }
+        
+        // ── 4. Install voxcpmane2 ─────────────────────────────────
+        log("📦 Installing voxcpmane2 in venv (this may take a minute)…")
+        let install = runPythonInVenv(args: ["-m", "pip", "install", "voxcpmane2"])
+        if install.success {
+            log("✅ voxcpmane2 installed successfully")
+            return venvPythonPath
+        }
+        
+        // ── 5. Fallback: try with --pre (pre-release) ─────────────
+        log("⚠️ Stable install failed, trying pre-release…")
+        let installPre = runPythonInVenv(args: ["-m", "pip", "install", "--pre", "voxcpmane2"])
+        if installPre.success {
+            log("✅ voxcpmane2 pre-release installed")
+            return venvPythonPath
+        }
+        
+        log("❌ All installation attempts failed:\n\(install.output.prefix(1000))")
+        return nil
+    }
+    
+    /// Run a command using the venv's python3. Returns (success, combined stdout+stderr).
+    private func runPythonInVenv(args: [String]) -> (success: Bool, output: String) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: venvPython)
+        process.arguments = args
+        // Merge stderr into stdout so we capture error details
         let pipe = Pipe()
-        installProcess.standardOutput = pipe; installProcess.standardError = pipe
+        process.standardOutput = pipe; process.standardError = pipe
         do {
-            try installProcess.run(); installProcess.waitUntilExit()
-            if installProcess.terminationStatus == 0 { log("✅ voxcpmane2 installed successfully"); return true }
-            else { log("❌ pip install failed"); return false }
-        } catch { log("❌ pip install error: \(error)"); return false }
+            try process.run()
+            process.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let output = String(data: data, encoding: .utf8) ?? ""
+            return (process.terminationStatus == 0, output)
+        } catch {
+            return (false, error.localizedDescription)
+        }
     }
     
     // MARK: - Server Lifecycle
@@ -101,28 +174,49 @@ class ServerManager: ObservableObject {
         
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
-            guard let pythonPath = self.findPython() else {
-                DispatchQueue.main.async { self.status = .error("Python 3.10–3.12 not found.\nInstall via: brew install python@3.12") }
+            
+            // 1. Find system Python
+            guard let systemPython = self.findSystemPython() else {
+                DispatchQueue.main.async {
+                    self.status = .error(
+                        "Python 3.10–3.12 not found.\n\nInstall via Homebrew:\n  brew install python@3.12"
+                    )
+                }
                 return
             }
-            guard self.ensurePackageInstalled(pythonPath: pythonPath) else {
-                DispatchQueue.main.async { self.status = .error("Failed to install voxcpmane2. Check network and try again.") }
+            
+            // 2. Set up isolated venv + install voxcpmane2
+            guard let venvPy = self.setupVenv(systemPython: systemPython) else {
+                DispatchQueue.main.async {
+                    self.status = .error(
+                        "Failed to install voxcpmane2.\n\nCheck the logs for details and ensure you have an internet connection."
+                    )
+                }
                 return
             }
-            let port = self.findAvailablePort(starting: UserDefaults.standard.integer(forKey: "preferredPort"))
+            
+            // 3. Pick a free port
+            let port = self.findAvailablePort(
+                starting: UserDefaults.standard.integer(forKey: "preferredPort")
+            )
             DispatchQueue.main.async { self.port = port }
-            self.launchServer(pythonPath: pythonPath, port: port)
+            
+            // 4. Launch!
+            self.launchServer(venvPython: venvPy, port: port)
         }
     }
     
-    private func launchServer(pythonPath: String, port: Int) {
+    private func launchServer(venvPython: String, port: Int) {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: pythonPath)
+        process.executableURL = URL(fileURLWithPath: venvPython)
         var args = ["-m", "voxcpmane.server", "--host", "127.0.0.1", "--port", "\(port)"]
+        
         if let modelDir = UserDefaults.standard.string(forKey: "modelDirectory"), !modelDir.isEmpty {
             args.append(contentsOf: ["--model-dir", modelDir])
         }
-        if UserDefaults.standard.bool(forKey: "splitBaseLM") { args.append("--split-base-lm") }
+        if UserDefaults.standard.bool(forKey: "splitBaseLM") {
+            args.append("--split-base-lm")
+        }
         process.arguments = args
         
         let outputPipe = Pipe(); let errorPipe = Pipe()
@@ -137,8 +231,12 @@ class ServerManager: ObservableObject {
                 guard let self = self else { return }
                 self.healthTimer?.invalidate(); self.healthTimer = nil
                 if proc.terminationStatus != 0 && self.status != .stopped {
-                    self.status = .error("Server exited unexpectedly (code \(proc.terminationStatus)).")
-                } else if self.status != .stopped { self.status = .stopped }
+                    self.status = .error(
+                        "Server exited unexpectedly (code \(proc.terminationStatus)).\nCheck logs for details."
+                    )
+                } else if self.status != .stopped {
+                    self.status = .stopped
+                }
             }
         }
         
@@ -148,7 +246,9 @@ class ServerManager: ObservableObject {
             DispatchQueue.main.async { [weak self] in self?.startHealthCheck() }
         } catch {
             log("❌ Failed to launch server: \(error)")
-            DispatchQueue.main.async { self.status = .error("Failed to launch Python server:\n\(error.localizedDescription)") }
+            DispatchQueue.main.async {
+                self.status = .error("Failed to launch Python server:\n\(error.localizedDescription)")
+            }
         }
     }
     
@@ -204,7 +304,11 @@ class ServerManager: ObservableObject {
             guard let self = self else { timer.invalidate(); return }
             if Date().timeIntervalSince(startTime) > self.healthCheckTimeout {
                 timer.invalidate()
-                DispatchQueue.main.async { if case .starting = self.status { self.status = .error("Server took too long to start.") } }
+                DispatchQueue.main.async {
+                    if case .starting = self.status {
+                        self.status = .error("Server took too long to start. Check logs for errors.")
+                    }
+                }
                 return
             }
             self.checkHealth()
@@ -218,7 +322,11 @@ class ServerManager: ObservableObject {
             DispatchQueue.main.async {
                 guard let self = self else { return }
                 if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 {
-                    if case .starting = self.status { self.status = .running; self.healthTimer?.invalidate(); self.healthTimer = nil }
+                    if case .starting = self.status {
+                        self.status = .running
+                        self.healthTimer?.invalidate()
+                        self.healthTimer = nil
+                    }
                 }
             }
         }.resume()
