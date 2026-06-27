@@ -40,6 +40,7 @@ final class ServerManager: ObservableObject {
         case stopped
         case starting
         case downloading(progress: Double)
+        case warmingUp(port: Int)   // Process launched, waiting for HTTP to respond
         case running(port: Int)
         case error(String)
     }
@@ -50,6 +51,7 @@ final class ServerManager: ObservableObject {
     private var process: Process?
     private var stdoutPipe: Pipe?
     private var stderrPipe: Pipe?
+    private var healthCheckTask: Task<Void, Never>?
 
     private let appSupportDir: URL
     private let uvPath: String
@@ -85,10 +87,14 @@ final class ServerManager: ObservableObject {
 
     // MARK: - Computed properties
 
-    /// Returns the current server port, or 0 if not running.
+    /// Returns the current server port, or 0 if not running / warming up.
     var port: Int {
-        if case .running(let port) = status { return port }
-        return 0
+        switch status {
+        case .running(let port), .warmingUp(let port):
+            return port
+        default:
+            return 0
+        }
     }
 
     /// Full server log as a single string (for display / clipboard).
@@ -102,6 +108,7 @@ final class ServerManager: ObservableObject {
         guard case .stopped = status else { return }
         status = .starting
         logs.removeAll()
+        healthCheckTask?.cancel()
 
         Task.detached(priority: .userInitiated) {
             await self.performStart()
@@ -109,6 +116,9 @@ final class ServerManager: ObservableObject {
     }
 
     func stop() {
+        healthCheckTask?.cancel()
+        healthCheckTask = nil
+
         if let proc = process, proc.isRunning {
             proc.terminate()
             // Give it 2 seconds to shut down gracefully, then force-kill
@@ -131,8 +141,9 @@ final class ServerManager: ObservableObject {
     }
 
     func openInBrowser() {
-        guard case .running(let port) = status else { return }
-        if let url = URL(string: "http://127.0.0.1:\(port)") {
+        let p = port
+        guard p > 0 else { return }
+        if let url = URL(string: "http://127.0.0.1:\(p)") {
             NSWorkspace.shared.open(url)
         }
     }
@@ -270,23 +281,86 @@ final class ServerManager: ObservableObject {
 
         do {
             try proc.run()
-            setRunning(port: port)
-            appendLog("🟢 Server started (PID: \(proc.processIdentifier))")
+            appendLog("🟢 Server process started (PID: \(proc.processIdentifier))")
 
+            // ⚠️ Don't set .running yet — poll until the server actually responds
+            status = .warmingUp(port: port)
+            appendLog("⏳ Waiting for server to become ready...")
+
+            // Start health-check polling in background
+            healthCheckTask = Task.detached { [weak self] in
+                await self?.waitForServerReady(port: port, timeoutSeconds: 60)
+            }
+
+            // Monitor process exit
             Task.detached {
                 proc.waitUntilExit()
                 let exitCode = proc.terminationStatus
-                Task { @MainActor in
-                    if case .running = self.status {
+                Task { @MainActor [weak self] in
+                    guard let self = self else { return }
+                    self.healthCheckTask?.cancel()
+                    self.healthCheckTask = nil
+                    switch self.status {
+                    case .running, .warmingUp:
                         self.appendLog("⚠ Server exited with code \(exitCode)")
                         if exitCode != 0 {
                             self.status = .error("Server exited unexpectedly (code \(exitCode))")
                         }
+                    default:
+                        break
                     }
                 }
             }
         } catch {
             setError(error.localizedDescription)
+        }
+    }
+
+    // MARK: - Health Check Polling
+
+    /// Polls http://127.0.0.1:<port> until it responds (200 OK) or timeout.
+    private func waitForServerReady(port: Int, timeoutSeconds: Int) async {
+        let deadline = Date().addingTimeInterval(TimeInterval(timeoutSeconds))
+        let url = URL(string: "http://127.0.0.1:\(port)/")!
+
+        while Date() < deadline {
+            // Check if task was cancelled
+            if Task.isCancelled { return }
+
+            do {
+                var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 3)
+                request.httpMethod = "HEAD"
+                let (_, response) = try await URLSession.shared.data(for: request)
+                if let httpResponse = response as? HTTPURLResponse {
+                    // Any HTTP response (even 404) means the server is listening
+                    if httpResponse.statusCode > 0 {
+                        await MainActor.run { [weak self] in
+                            guard let self = self else { return }
+                            // Only transition if we're still warming up
+                            if case .warmingUp = self.status {
+                                self.status = .running(port: port)
+                                self.appendLog("✅ Server is ready (HTTP \(httpResponse.statusCode))")
+                            }
+                        }
+                        return
+                    }
+                }
+            } catch {
+                // Connection refused or timeout — server not ready yet
+                // Just retry after a short delay
+            }
+
+            // Wait 1.5 seconds before next attempt
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+        }
+
+        // Timeout
+        await MainActor.run { [weak self] in
+            guard let self = self else { return }
+            if case .warmingUp = self.status {
+                self.status = .error("Server did not respond within \(timeoutSeconds)s. Check logs for details.")
+                self.appendLog("❌ Health check timed out after \(timeoutSeconds)s")
+            }
         }
     }
 
@@ -305,6 +379,9 @@ final class ServerManager: ObservableObject {
         guard anePatterns.contains(where: { stderr.contains($0) }) else { return }
 
         appendLog("⚠️ ANE compilation error detected!")
+
+        healthCheckTask?.cancel()
+        healthCheckTask = nil
 
         // Stop the process
         if let proc = process, proc.isRunning {
