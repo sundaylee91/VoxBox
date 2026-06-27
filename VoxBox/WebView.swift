@@ -109,8 +109,8 @@ struct WebView: NSViewRepresentable {
         var style = document.createElement('style');
         style.id = 'voxbox-styles';
         style.textContent = [
-            '@keyframes voxboxSlideIn{from{transform:translateY(-12px);opacity:0}to{transform:translateY(0);opacity:1}}',
-            '@keyframes voxboxSlideOut{from{transform:translateY(0);opacity:1}to{transform:translateY(-12px);opacity:0}}',
+            '@keyframes voxboxSlideIn{from{transform:translateX(-50%) translateY(-12px);opacity:0}to{transform:translateX(-50%) translateY(0);opacity:1}}',
+            '@keyframes voxboxSlideOut{from{transform:translateX(-50%) translateY(0);opacity:1}to{transform:translateX(-50%) translateY(-12px);opacity:0}}',
             '#voxbox-clock-btn:hover{transform:scale(1.1);box-shadow:0 2px 10px rgba(0,0,0,0.35)}'
         ].join('');
         document.head.appendChild(style);
