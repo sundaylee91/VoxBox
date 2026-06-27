@@ -35,7 +35,7 @@ struct SettingsView: View {
                             }
                             .pickerStyle(.radioGroup)
                             Text(L10n.languageDesc)
-                                .font(.caption).foregroundColor(.secondary)
+                                .font(.caption).foregroundStyle(.secondary)
                         }
                     }
 
@@ -50,14 +50,14 @@ struct SettingsView: View {
                             .pickerStyle(.radioGroup)
 
                             Text(L10n.formatDesc)
-                                .font(.caption).foregroundColor(.secondary)
+                                .font(.caption).foregroundStyle(.secondary)
 
                             if !serverManager.mp3Available {
                                 HStack(spacing: 4) {
                                     Image(systemName: "exclamationmark.triangle.fill")
                                         .foregroundColor(.orange).font(.caption)
                                     Text("MP3 encoder not available. Install ffmpeg: brew install ffmpeg")
-                                        .font(.caption).foregroundColor(.secondary)
+                                        .font(.caption).foregroundStyle(.secondary)
                                 }
                             }
 
@@ -68,12 +68,12 @@ struct SettingsView: View {
                                 Text(L10n.outputFolderLabel)
                                     .font(.subheadline).fontWeight(.medium)
                                 Text(L10n.outputFolderDesc)
-                                    .font(.caption).foregroundColor(.secondary)
+                                    .font(.caption).foregroundStyle(.secondary)
 
                                 HStack(spacing: 6) {
                                     Text(serverManager.outputFolder.path)
                                         .font(.system(size: 11, design: .monospaced))
-                                        .foregroundColor(.secondary)
+                                        .foregroundStyle(.secondary)
                                         .lineLimit(1)
                                         .truncationMode(.middle)
                                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -93,11 +93,11 @@ struct SettingsView: View {
                                     }
                                     .buttonStyle(.plain)
                                     .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .foregroundStyle(.secondary)
                                 }
 
                                 Text(L10n.defaultOutputPath)
-                                    .font(.caption2).foregroundColor(.tertiary)
+                                    .font(.caption2).foregroundStyle(.tertiary)
                             }
 
                             Divider()
@@ -115,14 +115,14 @@ struct SettingsView: View {
                         Toggle(isOn: $autoStartServer) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(L10n.autoStartServer)
-                                Text(L10n.autoStartDesc).font(.caption).foregroundColor(.secondary)
+                                Text(L10n.autoStartDesc).font(.caption).foregroundStyle(.secondary)
                             }
                         }
                         Divider()
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(L10n.serverPort)
-                                Text(L10n.defaultPort).font(.caption).foregroundColor(.secondary)
+                                Text(L10n.defaultPort).font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
                             TextField("Port", value: $preferredPort, format: .number).textFieldStyle(.roundedBorder).frame(width: 100)
@@ -146,7 +146,7 @@ struct SettingsView: View {
                         Toggle(isOn: $splitBaseLM) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(L10n.splitBaseLM)
-                                Text(L10n.splitBaseLMDesc).font(.caption).foregroundColor(.secondary)
+                                Text(L10n.splitBaseLMDesc).font(.caption).foregroundStyle(.secondary)
                             }
                         }
                     }
@@ -168,7 +168,7 @@ struct SettingsView: View {
                         if showingLogs {
                             ScrollView {
                                 Text(serverManager.logOutput.isEmpty ? L10n.noLogs : serverManager.logOutput)
-                                    .font(.system(size: 11, design: .monospaced)).foregroundColor(.secondary)
+                                    .font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
                                     .frame(maxWidth: .infinity, alignment: .leading).padding(8)
                             }
                             .frame(height: 200).background(Color(nsColor: .textBackgroundColor)).cornerRadius(6)
@@ -179,7 +179,7 @@ struct SettingsView: View {
                     SettingsSection(title: L10n.about, icon: "info.circle") {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(L10n.voxBox).font(.headline)
-                            Text("\(L10n.version) \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0")").foregroundColor(.secondary)
+                            Text("\(L10n.version) \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0")").foregroundStyle(.secondary)
                             HStack(spacing: 12) {
                                 Link("GitHub", destination: URL(string: "https://github.com/sundaylee91/VoxBox")!)
                                 Link("VoxCPMANE", destination: URL(string: "https://github.com/0seba/VoxCPMANE")!)
