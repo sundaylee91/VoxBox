@@ -19,6 +19,8 @@ struct ContentView: View {
                     LoadingView(message: "Starting Python backend…")
                 case .downloading(let progress):
                     ModelDownloadView(progress: progress)
+                case .warmingUp(let port):
+                    WarmingUpView(port: port)
                 case .running:
                     WebView(url: URL(string: "http://127.0.0.1:\(serverManager.port)")!)
                 case .error(let message):
@@ -50,6 +52,49 @@ struct ContentView: View {
     }
 }
 
+// MARK: - Warming Up View
+
+struct WarmingUpView: View {
+    let port: Int
+    @State private var isAnimating = false
+    @State private var dots = 0
+    let timer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
+    
+    var body: some View {
+        VStack(spacing: 32) {
+            Spacer()
+            
+            ZStack {
+                Circle().stroke(Color.blue.opacity(0.15), lineWidth: 6).frame(width: 64, height: 64)
+                Circle()
+                    .trim(from: 0, to: 0.7)
+                    .stroke(AngularGradient(colors: [.blue, .purple, .blue.opacity(0.5)], center: .center),
+                            style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                    .frame(width: 64, height: 64)
+                    .rotationEffect(.degrees(isAnimating ? 360 : 0))
+                    .animation(.linear(duration: 1.2).repeatForever(autoreverses: false), value: isAnimating)
+            }
+            .onAppear { isAnimating = true }
+            
+            VStack(spacing: 8) {
+                Text("Server is warming up\(String(repeating: ".", count: dots))")
+                    .font(.headline)
+                    .onReceive(timer) { _ in dots = (dots + 1) % 4 }
+                Text("Loading CoreML models into Neural Engine…")
+                    .font(.subheadline).foregroundColor(.secondary)
+                Text("Port: \(port)")
+                    .font(.caption).foregroundColor(.tertiary)
+                    .monospaced()
+            }
+            
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - Status Badge
+
 struct StatusBadge: View {
     let status: ServerManager.ServerStatus
     
@@ -65,7 +110,7 @@ struct StatusBadge: View {
     private var statusColor: Color {
         switch status {
         case .running: return .green
-        case .starting, .downloading: return .orange
+        case .starting, .downloading, .warmingUp: return .orange
         case .stopped: return .gray
         case .error: return .red
         }
@@ -75,6 +120,7 @@ struct StatusBadge: View {
         switch status {
         case .running: return "Running"
         case .starting: return "Starting…"
+        case .warmingUp: return "Warming up…"
         case .downloading(let p): return "Downloading \(Int(p * 100))%"
         case .stopped: return "Stopped"
         case .error: return "Error"
