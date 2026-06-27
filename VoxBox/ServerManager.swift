@@ -116,7 +116,6 @@ final class ServerManager: ObservableObject {
     private var healthCheckTask: Task<Void, Never>?
 
     private let appSupportDir: URL
-    private let uvPath: String
     private let isM1Series: Bool
     private let isAppleSilicon: Bool
 
@@ -135,7 +134,6 @@ final class ServerManager: ObservableObject {
         ).first!.appendingPathComponent("VoxBox")
 
         self.appSupportDir = base
-        self.uvPath = ServerManager.findUv()
         self.isAppleSilicon = ServerManager.isAppleSiliconMac()
         self.isM1Series = ServerManager.isM1Series()
 
@@ -665,20 +663,15 @@ final class ServerManager: ObservableObject {
     // MARK: - Start Sequence
 
     private func performStart() async {
+        // Resolve uv at runtime (with fresh validation, not cached from init)
         let uv: String
-        if !uvPath.isEmpty {
-            uv = uvPath
-            appendLog("✅ Found uv at \(uv)")
-        } else {
-            appendLog("📦 Installing uv package manager…")
-            do {
-                uv = try await installUv()
-                appendLog("✅ uv installed at \(uv)")
-            } catch {
-                setError("Failed to install uv: \(error.localizedDescription)")
-                return
-            }
+        do {
+            uv = try await resolveUv()
+        } catch {
+            setError("Failed to resolve uv: \(error.localizedDescription)")
+            return
         }
+        appendLog("✅ Using uv at: \(uv)")
 
         guard let pythonPath = ServerManager.findSystemPython() else {
             setError("Python >=3.10,<3.13 not found. Install via Homebrew: brew install python@3.12")
@@ -706,12 +699,27 @@ final class ServerManager: ObservableObject {
         }
 
         do {
-            appendLog("📦 Running: uv \(installArgs.joined(separator: " "))")
+            appendLog("📦 Running: \(uv) \(installArgs.joined(separator: " "))")
             let output = try await runAsync(uv, args: installArgs)
             appendLog(output)
         } catch {
-            setError("uv tool install failed: \(error.localizedDescription)")
-            return
+            // If uv failed because the file doesn't exist, try reinstalling
+            let nsErr = error as NSError
+            if nsErr.domain == "NSCocoaErrorDomain" && nsErr.code == 4 {
+                appendLog("⚠️ uv binary disappeared — attempting reinstall…")
+                do {
+                    let freshUv = try await installUv()
+                    appendLog("✅ Reinstalled uv at: \(freshUv)")
+                    let output = try await runAsync(freshUv, args: installArgs)
+                    appendLog(output)
+                } catch {
+                    setError("uv tool install failed (after reinstall): \(error.localizedDescription)")
+                    return
+                }
+            } else {
+                setError("uv tool install failed: \(error.localizedDescription)")
+                return
+            }
         }
 
         let serverBinary = "\(NSHomeDirectory())/.local/bin/voxcpmane2-server"
@@ -919,10 +927,29 @@ final class ServerManager: ObservableObject {
         return brand.hasPrefix("Apple M1")
     }
 
-    // MARK: - Install uv
+    // MARK: - Resolve uv (runtime, with full validation)
+
+    /// Resolves a working uv executable at runtime.
+    /// Tries to find an existing installation first; falls back to downloading uv.
+    /// Validates that the binary is executable before returning.
+    private func resolveUv() async throws -> String {
+        // 1. Try to find an existing uv installation (fresh search every time)
+        if let found = ServerManager.findUv() {
+            appendLog("🔍 Found candidate uv at: \(found)")
+            if ServerManager.isExecutableUv(at: found) {
+                return found
+            } else {
+                appendLog("⚠️ uv exists at \(found) but is NOT executable — will reinstall")
+            }
+        }
+
+        // 2. Not found or not executable — install fresh
+        appendLog("📦 Installing uv package manager (resolveUv)…")
+        return try await installUv()
+    }
 
     /// Search for uv in common locations. Returns an absolute, existing path, or "" if not found.
-    private static func findUv() -> String {
+    private static func findUv() -> String? {
         let candidates = [
             "/opt/homebrew/bin/uv",
             "/usr/local/bin/uv",
@@ -938,12 +965,32 @@ final class ServerManager: ObservableObject {
         let which = try? runSync("/bin/sh", args: ["-lc", "command -v uv 2>/dev/null"])
         if let p = which?.trimmingCharacters(in: .whitespacesAndNewlines),
            !p.isEmpty,
-           p.hasPrefix("/"),                 // ← must be absolute path
-           FileManager.default.fileExists(atPath: p)  // ← must actually exist
+           p.hasPrefix("/"),
+           FileManager.default.fileExists(atPath: p)
         {
             return p
         }
-        return ""
+        return nil
+    }
+
+    /// Check whether a path points to an executable uv binary.
+    private static func isExecutableUv(at path: String) -> Bool {
+        guard FileManager.default.isExecutableFile(atPath: path) else {
+            return false
+        }
+        // Double-check by actually running `uv --version`
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: path)
+        proc.arguments = ["--version"]
+        proc.standardOutput = Pipe()
+        proc.standardError = Pipe()
+        do {
+            try proc.run()
+            proc.waitUntilExit()
+            return proc.terminationStatus == 0
+        } catch {
+            return false
+        }
     }
 
     private func installUv() async throws -> String {
@@ -970,11 +1017,18 @@ final class ServerManager: ObservableObject {
             throw ServerError.uvInstallFailed(output)
         }
 
-        let uvPath = "\(NSHomeDirectory())/.local/bin/uv"
-        guard FileManager.default.fileExists(atPath: uvPath) else {
-            throw ServerError.uvNotFoundAfterInstall
+        // Check multiple possible install locations
+        let installCandidates = [
+            "\(NSHomeDirectory())/.local/bin/uv",
+            "\(NSHomeDirectory())/.cargo/bin/uv",
+        ]
+        for candidate in installCandidates {
+            if ServerManager.isExecutableUv(at: candidate) {
+                return candidate
+            }
         }
-        return uvPath
+
+        throw ServerError.uvNotFoundAfterInstall
     }
 
     // MARK: - Helpers
