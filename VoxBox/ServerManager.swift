@@ -78,8 +78,29 @@ final class ServerManager: ObservableObject {
     /// Whether MP3 export is available (requires ffmpeg, lame, or working afconvert).
     @Published var mp3Available: Bool = false
 
-    /// Folder where all generated audio is auto-saved.
-    let recordingsFolder: URL
+    /// Custom output folder path (stored in UserDefaults). If empty, uses default.
+    @Published var outputFolderPath: String {
+        didSet {
+            UserDefaults.standard.set(outputFolderPath, forKey: "VoxBox.outputFolderPath")
+            // Ensure the folder exists when changed
+            try? FileManager.default.createDirectory(at: outputFolder, withIntermediateDirectories: true)
+        }
+    }
+
+    /// Resolved output folder URL.
+    var outputFolder: URL {
+        if !outputFolderPath.isEmpty,
+           let url = URL(string: "file://" + outputFolderPath),
+           FileManager.default.fileExists(atPath: outputFolderPath) {
+            return url
+        }
+        // Default: ~/VoxBox Output
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("VoxBox Output")
+    }
+
+    /// Legacy alias for backward compat.
+    var recordingsFolder: URL { outputFolder }
 
     private var process: Process?
     private var stdoutPipe: Pipe?
@@ -110,10 +131,17 @@ final class ServerManager: ObservableObject {
         self.isAppleSilicon = ServerManager.isAppleSiliconMac()
         self.isM1Series = ServerManager.isM1Series()
 
-        // Auto-save recordings folder in user home
-        self.recordingsFolder = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("VoxBox Recordings")
-        try? FileManager.default.createDirectory(at: recordingsFolder, withIntermediateDirectories: true)
+        // Restore output folder path from UserDefaults
+        if let saved = UserDefaults.standard.string(forKey: "VoxBox.outputFolderPath"),
+           !saved.isEmpty,
+           FileManager.default.fileExists(atPath: saved) {
+            self.outputFolderPath = saved
+        } else {
+            self.outputFolderPath = ""
+        }
+
+        // Ensure output folder exists
+        try? FileManager.default.createDirectory(at: outputFolder, withIntermediateDirectories: true)
 
         // Restore saved format preference
         if let saved = UserDefaults.standard.string(forKey: "VoxBox.preferredFormat"),
@@ -231,21 +259,48 @@ final class ServerManager: ObservableObject {
             audioHistory.removeFirst()
         }
 
-        // Auto-save to recordings folder
+        // Auto-save to output folder
         autoSave(audioData: data, text: text)
 
         appendLog("🎵 Audio captured: \(data.count) bytes, text: \"\(text.prefix(40))\" (history: \(audioHistory.count))")
     }
 
-    // MARK: - Auto-save & Recordings Folder
+    // MARK: - Output Folder
 
-    /// Open the recordings folder in Finder.
+    /// Open the output folder in Finder.
     func openRecordingsFolder() {
-        NSWorkspace.shared.open(recordingsFolder)
+        NSWorkspace.shared.open(outputFolder)
     }
 
-    /// Auto-save audio data to the recordings folder in the preferred format.
+    /// Let the user choose a custom output folder.
+    func chooseOutputFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = L10n.chooseFolder
+        panel.message = L10n.outputFolderDesc
+        if panel.runModal() == .OK, let url = panel.url {
+            outputFolderPath = url.path
+            appendLog("📂 Output folder changed to: \(url.path)")
+        }
+    }
+
+    /// Reset output folder to default.
+    func resetOutputFolder() {
+        outputFolderPath = ""
+        // Re-create default
+        try? FileManager.default.createDirectory(at: outputFolder, withIntermediateDirectories: true)
+        appendLog("📂 Output folder reset to default: \(outputFolder.path)")
+    }
+
+    // MARK: - Auto-save
+
+    /// Auto-save audio data to the output folder in the preferred format.
     private func autoSave(audioData: Data, text: String) {
+        let folder = outputFolder
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+
         let fmt = preferredFormat
 
         // Sanitize filename from text
@@ -265,7 +320,7 @@ final class ServerManager: ObservableObject {
         df.dateFormat = "yyyy-MM-dd_HHmmss"
         let timestamp = df.string(from: Date())
         let filename = "\(timestamp)_\(name).\(fmt.fileExtension)"
-        let fileURL = recordingsFolder.appendingPathComponent(filename)
+        let fileURL = folder.appendingPathComponent(filename)
 
         // Convert to MP3 if needed and available
         let outputData: Data
