@@ -834,14 +834,16 @@ final class ServerManager: ObservableObject {
     }
 
     /// Use POSIX chmod to set +x on a file (works inside sandbox).
-    private static func chmodX(_ path: String) -> Bool {
+    /// Marked nonisolated so it can be called from background queues.
+    private static nonisolated func chmodX(_ path: String) -> Bool {
         let result = Darwin.chmod(path, 0o755)
         return result == 0
     }
 
     /// Search for an executable uv binary.
     /// If a candidate exists but lacks +x, attempt chmod +x before giving up.
-    private static func findUvExecutable() -> String? {
+    /// Marked nonisolated so it can be called from background queues.
+    private static nonisolated func findUvExecutable() -> String? {
         let candidates = [
             "\(NSHomeDirectory())/.local/bin/uv",
             "/opt/homebrew/bin/uv",
@@ -1000,7 +1002,8 @@ final class ServerManager: ObservableObject {
                         } else {
                             dirLog += "\n(no files or directory not readable)"
                         }
-                        Task { @MainActor in self.appendLog(dirLog) }
+                        let capturedDirLog = dirLog
+                        Task { @MainActor in self.appendLog(capturedDirLog) }
 
                         if i < 6 {
                             Task { @MainActor in self.appendLog("⏳ uv not executable yet, retrying (\(i)/6)…") }
