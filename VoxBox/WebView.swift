@@ -4,9 +4,12 @@ import WebKit
 // MARK: - VoxBox Local Frontend HTML
 
 enum VoxBoxHTML {
-    /// Returns the full HTML document with the server port injected.
-    static func html(port: Int) -> String {
-        return template.replacingOccurrences(of: "{{PORT}}", with: "\(port)")
+    /// Returns the full HTML document with the server port and language injected.
+    static func html(port: Int, isChinese: Bool) -> String {
+        var html = template
+        html = html.replacingOccurrences(of: "{{PORT}}", with: "\(port)")
+        html = html.replacingOccurrences(of: "{{IS_CHINESE}}", with: isChinese ? "true" : "false")
+        return html
     }
 
     // MARK: - Template
@@ -39,6 +42,9 @@ enum VoxBoxHTML {
         --btn-secondary-border: rgba(0,0,0,0.12);
         --btn-secondary-text: #1d1d1f;
         --btn-secondary-hover-bg: rgba(0,0,0,0.04);
+        --btn-disabled-bg: rgba(0,0,0,0.04);
+        --btn-disabled-text: rgba(0,0,0,0.22);
+        --btn-disabled-border: rgba(0,0,0,0.06);
         --divider: rgba(0,0,0,0.06);
         --status-success: #30D158;
         --status-error: #FF453A;
@@ -75,6 +81,9 @@ enum VoxBoxHTML {
             --btn-secondary-border: rgba(255,255,255,0.12);
             --btn-secondary-text: #f5f5f7;
             --btn-secondary-hover-bg: rgba(255,255,255,0.06);
+            --btn-disabled-bg: rgba(255,255,255,0.04);
+            --btn-disabled-text: rgba(255,255,255,0.18);
+            --btn-disabled-border: rgba(255,255,255,0.05);
             --divider: rgba(255,255,255,0.06);
             --slider-track: rgba(255,255,255,0.12);
             --slider-fill: #0A84FF;
@@ -123,7 +132,6 @@ enum VoxBoxHTML {
         margin-bottom: 16px;
     }
 
-    /* Animated waveform bars */
     .waveform {
         display: flex;
         align-items: flex-end;
@@ -452,7 +460,7 @@ enum VoxBoxHTML {
     }
 
     .btn:disabled {
-        opacity: 0.4;
+        opacity: 0.35;
         cursor: not-allowed;
         pointer-events: none;
     }
@@ -532,38 +540,39 @@ enum VoxBoxHTML {
         vertical-align: middle;
     }
 
-    /* ── Toast ── */
+    /* ── Toast (larger) ── */
     @keyframes toastIn {
-        from { transform: translateX(-50%) translateY(-12px); opacity: 0; }
+        from { transform: translateX(-50%) translateY(-16px); opacity: 0; }
         to { transform: translateX(-50%) translateY(0); opacity: 1; }
     }
     @keyframes toastOut {
         from { transform: translateX(-50%) translateY(0); opacity: 1; }
-        to { transform: translateX(-50%) translateY(-12px); opacity: 0; }
+        to { transform: translateX(-50%) translateY(-16px); opacity: 0; }
     }
 
     .toast {
         position: fixed;
-        top: 16px;
+        top: 20px;
         left: 50%;
         transform: translateX(-50%);
         z-index: 9999;
-        padding: 8px 16px;
+        padding: 14px 28px;
         background: var(--toast-bg);
         color: var(--toast-text);
-        font-size: 12px;
+        font-size: 15px;
         font-weight: 500;
-        border-radius: 10px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.25);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
+        border-radius: 14px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
         pointer-events: none;
-        animation: toastIn 0.25s ease-out forwards;
+        animation: toastIn 0.3s ease-out forwards;
         letter-spacing: -0.1px;
+        line-height: 1.4;
     }
 
     .toast.out {
-        animation: toastOut 0.2s ease-in forwards;
+        animation: toastOut 0.25s ease-in forwards;
     }
 
     /* ── Audio Player ── */
@@ -573,7 +582,7 @@ enum VoxBoxHTML {
         border: 1px solid var(--card-border);
         border-radius: 16px;
         box-shadow: var(--card-shadow);
-        padding: 14px 18px;
+        padding: 16px 18px 14px;
         display: none;
         flex-direction: column;
         gap: 10px;
@@ -585,34 +594,63 @@ enum VoxBoxHTML {
         display: flex;
     }
 
-    .player-header {
+    /* Progress bar — full width row */
+    .player-progress-row {
+        width: 100%;
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        gap: 8px;
     }
 
-    .player-title {
-        font-size: 12px;
-        font-weight: 600;
-        color: var(--text-secondary);
-        letter-spacing: -0.1px;
+    .player-progress {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 100%;
+        height: 5px;
+        border-radius: 3px;
+        background: var(--player-progress-track);
+        outline: none;
+        cursor: pointer;
     }
 
-    .player-filename {
-        font-size: 11px;
-        font-weight: 400;
-        color: var(--text-tertiary);
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        max-width: 240px;
+    .player-progress::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: var(--slider-fill);
+        border: 2px solid #ffffff;
+        box-shadow: 0 1px 6px rgba(0,0,0,0.18);
+        cursor: pointer;
     }
 
-    .player-body {
+    /* Controls row: play btn + filename + time + replay btn */
+    .player-controls-row {
         display: flex;
         align-items: center;
         gap: 10px;
+        width: 100%;
+    }
+
+    .player-filename {
+        flex: 1;
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--text-secondary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+        letter-spacing: -0.1px;
+    }
+
+    .player-times-inline {
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--text-tertiary);
+        white-space: nowrap;
+        flex-shrink: 0;
+        letter-spacing: 0;
+        font-variant-numeric: tabular-nums;
     }
 
     .player-btn {
@@ -655,46 +693,7 @@ enum VoxBoxHTML {
         box-shadow: 0 4px 18px rgba(0,122,255,0.4);
     }
 
-    .player-progress-container {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        gap: 3px;
-        min-width: 0;
-    }
-
-    .player-progress {
-        -webkit-appearance: none;
-        appearance: none;
-        width: 100%;
-        height: 5px;
-        border-radius: 3px;
-        background: var(--player-progress-track);
-        outline: none;
-        cursor: pointer;
-    }
-
-    .player-progress::-webkit-slider-thumb {
-        -webkit-appearance: none;
-        width: 14px;
-        height: 14px;
-        border-radius: 50%;
-        background: var(--slider-fill);
-        border: 2px solid #ffffff;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.15);
-        cursor: pointer;
-    }
-
-    .player-times {
-        display: flex;
-        justify-content: space-between;
-        font-size: 10px;
-        font-weight: 500;
-        color: var(--text-tertiary);
-        letter-spacing: 0;
-    }
-
-    /* ── Hidden audio element (kept for playback) ── */
+    /* ── Hidden audio element ── */
     #audio-player { display: none; }
 
     /* ── Scrollbar ── */
@@ -716,7 +715,6 @@ enum VoxBoxHTML {
         background: var(--text-secondary);
     }
 
-    /* ── Focus ring for accessibility ── */
     :focus-visible {
         outline: 2px solid var(--input-focus-border);
         outline-offset: 2px;
@@ -739,8 +737,8 @@ enum VoxBoxHTML {
                 <div class="bar"></div>
             </div>
         </div>
-        <h1>VoxBox</h1>
-        <p class="subtitle">Native AI Text-to-Speech on Apple Neural Engine</p>
+        <h1 data-l10n="appTitle">VoxBox</h1>
+        <p class="subtitle" data-l10n="appSubtitle">Native AI Text-to-Speech on Apple Neural Engine</p>
     </div>
 
     <!-- Main Card -->
@@ -749,58 +747,59 @@ enum VoxBoxHTML {
         <div class="input-wrapper">
             <textarea
                 id="text-input"
+                data-l10n-placeholder="inputPlaceholder"
                 placeholder="Type or paste text to speak…"
                 maxlength="2000"
                 rows="4"
             ></textarea>
             <div class="input-footer">
                 <span class="char-count" id="char-count">0 / 2000</span>
-                <button class="clear-btn" id="clear-btn" title="Clear text">Clear</button>
+                <button class="clear-btn" id="clear-btn" data-l10n="clearBtn" title="Clear text">Clear</button>
             </div>
         </div>
 
         <!-- Voice Preset -->
         <div class="voice-section">
             <div class="setting-row">
-                <span class="setting-label">🎤 Voice</span>
-                <button class="voice-refresh" id="voice-refresh" title="Refresh voices">↻</button>
+                <span class="setting-label" data-l10n="voiceLabel">🎤 Voice</span>
+                <button class="voice-refresh" id="voice-refresh" data-l10n-title="refreshVoices" title="Refresh voices">↻</button>
             </div>
             <div class="voice-row">
                 <select id="voice-select" class="voice-select">
-                    <option value="">Loading voices…</option>
+                    <option value="" data-l10n="loadingVoices">Loading voices…</option>
                 </select>
                 <select id="voice-mode-select" class="voice-mode-select">
                     <option value="reference">Reference</option>
-                    <option value="high_similarity">High Sim</option>
+                    <option value="high_similarity" data-l10n="highSim">High Sim</option>
                 </select>
             </div>
         </div>
 
         <!-- Advanced Settings Toggle -->
         <button class="advanced-toggle" id="advanced-toggle">
-            <span>Advanced Settings</span>
+            <span data-l10n="advancedSettings">Advanced Settings</span>
             <span class="chevron">▾</span>
         </button>
 
         <!-- Advanced Panel -->
         <div class="advanced-panel" id="advanced-panel">
             <div class="setting-row">
-                <span class="setting-label">Speed</span>
+                <span class="setting-label" data-l10n="speed">Speed</span>
                 <input type="range" id="speed-slider" min="0.5" max="2.0" step="0.1" value="1.0">
                 <span class="setting-value" id="speed-value">1.0x</span>
             </div>
             <div class="setting-row">
-                <span class="setting-label">Sample Rate</span>
+                <span class="setting-label" data-l10n="sampleRate">Sample Rate</span>
                 <input type="range" id="sample-rate-slider" min="16000" max="48000" step="1000" value="24000">
                 <span class="setting-value" id="sample-rate-value">24 kHz</span>
             </div>
             <div class="setting-row">
-                <span class="setting-label">CFG Scale</span>
+                <span class="setting-label" data-l10n="cfgScale">CFG Scale</span>
                 <input type="range" id="cfg-slider" min="1.0" max="4.0" step="0.1" value="2.0">
                 <span class="setting-value" id="cfg-value">2.0</span>
             </div>
             <div class="setting-row">
-                <span class="setting-label">Timesteps</span>
+                <span class="setting-label" data-l10n="timesteps">Timesteps</span>
                 <input type="range" id="timesteps-slider" min="4" max="30" step="1" value="10">
                 <span class="setting-value" id="timesteps-value">10</span>
             </div>
@@ -810,35 +809,30 @@ enum VoxBoxHTML {
         <div class="btn-row">
             <button class="btn btn-primary" id="btn-generate-play" disabled>
                 <span id="btn-icon-play">▶</span>
-                <span id="btn-text-play">Generate &amp; Play</span>
+                <span id="btn-text-play" data-l10n="generateAndPlay">Generate &amp; Play</span>
             </button>
             <button class="btn btn-secondary" id="btn-generate-save" disabled>
-                <span>↓</span>
-                <span>Save Audio</span>
+                <span>💾</span>
+                <span data-l10n="saveAudio">Save Audio</span>
             </button>
         </div>
 
         <!-- Status -->
-        <div class="status idle" id="status">Ready</div>
+        <div class="status idle" id="status" data-l10n="ready">Ready</div>
     </div>
 
     <!-- Audio Player -->
     <div class="player-card" id="player-card">
-        <div class="player-header">
-            <span class="player-title">🔊 Audio Player</span>
-            <span class="player-filename" id="player-filename"></span>
+        <!-- Progress bar — full width -->
+        <div class="player-progress-row">
+            <input type="range" class="player-progress" id="player-progress" min="0" max="100" value="0">
         </div>
-        <div class="player-body">
-            <button class="player-btn play-btn" id="btn-play-pause" title="Play / Pause">▶</button>
-            <div class="player-progress-container">
-                <input type="range" class="player-progress" id="player-progress" min="0" max="100" value="0">
-                <div class="player-times">
-                    <span id="time-current">00:00</span>
-                    <span id="time-duration">00:00</span>
-                </div>
-            </div>
-            <button class="player-btn" id="btn-replay" title="Replay">↺</button>
-            <button class="player-btn" id="btn-download-audio" title="Download">↓</button>
+        <!-- Controls: play btn, filename, time, replay btn -->
+        <div class="player-controls-row">
+            <button class="player-btn play-btn" id="btn-play-pause" data-l10n-title="playPause" title="Play / Pause">▶</button>
+            <span class="player-filename" id="player-filename"></span>
+            <span class="player-times-inline" id="player-times-inline">00:00 / 00:00</span>
+            <button class="player-btn" id="btn-replay" data-l10n-title="replay" title="Replay">↺</button>
         </div>
     </div>
 </div>
@@ -849,6 +843,71 @@ enum VoxBoxHTML {
 <script>
 (function() {
     'use strict';
+
+    // ── Localization ──
+    var IS_CHINESE = {{IS_CHINESE}};
+
+    var L10N = {
+        // App
+        appTitle: IS_CHINESE ? 'VoxBox' : 'VoxBox',
+        appSubtitle: IS_CHINESE ? '基于 Apple 神经网络引擎的原生 AI 文字转语音' : 'Native AI Text-to-Speech on Apple Neural Engine',
+        // Input
+        inputPlaceholder: IS_CHINESE ? '输入或粘贴要朗读的文字…' : 'Type or paste text to speak…',
+        clearBtn: IS_CHINESE ? '清空' : 'Clear',
+        clearBtnTitle: IS_CHINESE ? '清空文字' : 'Clear text',
+        // Voice
+        voiceLabel: IS_CHINESE ? '🎤 语音' : '🎤 Voice',
+        refreshVoices: IS_CHINESE ? '刷新语音列表' : 'Refresh voices',
+        loadingVoices: IS_CHINESE ? '加载中…' : 'Loading voices…',
+        defaultVoice: IS_CHINESE ? '默认（无预设）' : 'Default (no preset)',
+        noVoices: IS_CHINESE ? '未找到预设语音' : 'No preset voices found',
+        loadFailed: IS_CHINESE ? '加载失败' : 'Failed to load voices',
+        highSim: IS_CHINESE ? '高相似度' : 'High Sim',
+        // Advanced
+        advancedSettings: IS_CHINESE ? '高级设置' : 'Advanced Settings',
+        speed: IS_CHINESE ? '语速' : 'Speed',
+        sampleRate: IS_CHINESE ? '采样率' : 'Sample Rate',
+        cfgScale: IS_CHINESE ? 'CFG 缩放' : 'CFG Scale',
+        timesteps: IS_CHINESE ? '推理步数' : 'Timesteps',
+        // Buttons
+        generateAndPlay: IS_CHINESE ? '生成并播放' : 'Generate & Play',
+        saveAudio: IS_CHINESE ? '保存音频' : 'Save Audio',
+        // Status
+        ready: IS_CHINESE ? '就绪' : 'Ready',
+        generating: IS_CHINESE ? '正在生成语音…' : 'Generating speech…',
+        successPlay: IS_CHINESE ? '✓ 音频已生成 — 正在播放' : '✓ Audio generated — playing now',
+        successSaved: IS_CHINESE ? '✓ 音频已保存' : '✓ Audio saved',
+        errorPrefix: IS_CHINESE ? '✗ ' : '✗ ',
+        // Player
+        playPause: IS_CHINESE ? '播放 / 暂停' : 'Play / Pause',
+        replay: IS_CHINESE ? '重新播放' : 'Replay',
+        playerTitle: IS_CHINESE ? '🔊 音频播放器' : '🔊 Audio Player',
+        generatedAudio: IS_CHINESE ? '生成的音频' : 'Generated Audio',
+        // Toast
+        toastSaved: IS_CHINESE ? '💾 音频已保存至' : '💾 Audio saved to ',
+        toastVoxBoxOutput: IS_CHINESE ? 'VoxBox Output 文件夹' : 'VoxBox Output folder'
+    };
+
+    function _(key) { return L10N[key] || key; }
+
+    // Apply data-l10n attributes
+    function applyL10n() {
+        document.querySelectorAll('[data-l10n]').forEach(function(el) {
+            var key = el.getAttribute('data-l10n');
+            if (L10N[key]) el.textContent = L10N[key];
+        });
+        document.querySelectorAll('[data-l10n-placeholder]').forEach(function(el) {
+            var key = el.getAttribute('data-l10n-placeholder');
+            if (L10N[key]) el.placeholder = L10N[key];
+        });
+        document.querySelectorAll('[data-l10n-title]').forEach(function(el) {
+            var key = el.getAttribute('data-l10n-title');
+            if (L10N[key]) el.title = L10N[key];
+        });
+        // Update clear button title
+        var clearBtn = document.getElementById('clear-btn');
+        if (clearBtn) clearBtn.title = _('clearBtnTitle');
+    }
 
     // ── Configuration ──
     var SERVER_PORT = {{PORT}};
@@ -886,10 +945,8 @@ enum VoxBoxHTML {
     var playerFilename = document.getElementById('player-filename');
     var btnPlayPause = document.getElementById('btn-play-pause');
     var playerProgress = document.getElementById('player-progress');
-    var timeCurrent = document.getElementById('time-current');
-    var timeDuration = document.getElementById('time-duration');
+    var playerTimesInline = document.getElementById('player-times-inline');
     var btnReplay = document.getElementById('btn-replay');
-    var btnDownloadAudio = document.getElementById('btn-download-audio');
 
     // ── State ──
     var isGenerating = false;
@@ -897,6 +954,7 @@ enum VoxBoxHTML {
     var lastText = '';
     var availableVoices = [];
     var playerSeeking = false;
+    var currentBlobURL = null;
 
     // ── Format time ──
     function formatTime(seconds) {
@@ -908,7 +966,7 @@ enum VoxBoxHTML {
 
     // ── Load available voices ──
     function loadVoices() {
-        voiceSelect.innerHTML = '<option value="">Loading…</option>';
+        voiceSelect.innerHTML = '<option value="">' + _('loadingVoices') + '</option>';
         voiceSelect.disabled = true;
 
         fetch(VOICES_ENDPOINT)
@@ -920,10 +978,9 @@ enum VoxBoxHTML {
                 availableVoices = [];
                 voiceSelect.innerHTML = '';
 
-                // Add "none" option for default voice
                 var defaultOpt = document.createElement('option');
                 defaultOpt.value = '';
-                defaultOpt.textContent = 'Default (no preset)';
+                defaultOpt.textContent = _('defaultVoice');
                 voiceSelect.appendChild(defaultOpt);
 
                 if (data && data.voices && Array.isArray(data.voices)) {
@@ -942,7 +999,7 @@ enum VoxBoxHTML {
                 if (availableVoices.length === 0) {
                     var noOpt = document.createElement('option');
                     noOpt.value = '';
-                    noOpt.textContent = 'No preset voices found';
+                    noOpt.textContent = _('noVoices');
                     noOpt.disabled = true;
                     voiceSelect.appendChild(noOpt);
                 }
@@ -951,7 +1008,7 @@ enum VoxBoxHTML {
                 console.log('[VoxBox] Loaded ' + availableVoices.length + ' voices');
             })
             .catch(function(err) {
-                voiceSelect.innerHTML = '<option value="">Failed to load voices</option>';
+                voiceSelect.innerHTML = '<option value="">' + _('loadFailed') + '</option>';
                 voiceSelect.disabled = false;
                 console.warn('[VoxBox] Voice load error:', err);
             });
@@ -968,17 +1025,16 @@ enum VoxBoxHTML {
         if (len > max * 0.85 && len <= max) charCount.classList.add('warn');
         if (len > max) charCount.classList.add('over');
 
-        // Toggle clear button
         if (len > 0) {
             clearBtn.classList.add('visible');
         } else {
             clearBtn.classList.remove('visible');
         }
 
-        // Enable/disable buttons
         var hasText = len > 0 && len <= max;
         btnGeneratePlay.disabled = !hasText || isGenerating;
-        btnGenerateSave.disabled = !hasText || isGenerating;
+        // Save button: enabled only when text present AND audio already generated
+        btnGenerateSave.disabled = !lastAudioBlob || isGenerating;
     }
 
     textInput.addEventListener('input', updateCharCount);
@@ -1024,11 +1080,11 @@ enum VoxBoxHTML {
 
         if (generating) {
             btnIconPlay.innerHTML = '<span class="spinner"></span>';
-            btnTextPlay.textContent = 'Generating…';
+            btnTextPlay.textContent = IS_CHINESE ? '生成中…' : 'Generating…';
             waveformIcon.style.opacity = '0.5';
         } else {
             btnIconPlay.textContent = '▶';
-            btnTextPlay.textContent = 'Generate & Play';
+            btnTextPlay.textContent = _('generateAndPlay');
             waveformIcon.style.opacity = '1';
         }
     }
@@ -1046,30 +1102,48 @@ enum VoxBoxHTML {
             toast.classList.add('out');
             setTimeout(function() {
                 if (toast.parentNode) toast.parentNode.removeChild(toast);
-            }, 250);
-        }, 3000);
+            }, 300);
+        }, 3500);
+    }
+
+    // ── Create fresh blob URL for playback ──
+    function createPlaybackURL(blob) {
+        // Revoke previous URL if any
+        if (currentBlobURL) {
+            URL.revokeObjectURL(currentBlobURL);
+            currentBlobURL = null;
+        }
+        currentBlobURL = URL.createObjectURL(blob);
+        return currentBlobURL;
     }
 
     // ── Show audio player ──
     function showPlayer(text, blob) {
-        playerFilename.textContent = text ? (text.length > 50 ? text.substring(0, 47) + '…' : text) : 'Generated Audio';
+        var displayText = text || '';
+        if (displayText.length > 60) displayText = displayText.substring(0, 57) + '…';
+        if (!displayText) displayText = _('generatedAudio');
+        playerFilename.textContent = displayText;
         playerCard.classList.add('visible');
         lastAudioBlob = blob;
+        lastText = text;
 
-        // Update duration when metadata loads
-        var url = URL.createObjectURL(blob);
+        // Update save button state
+        btnGenerateSave.disabled = !lastAudioBlob || isGenerating;
+
+        // Create fresh playback URL
+        var url = createPlaybackURL(blob);
         audioPlayer.src = url;
 
         audioPlayer.onloadedmetadata = function() {
             var dur = audioPlayer.duration;
-            timeDuration.textContent = formatTime(dur);
+            playerTimesInline.textContent = '00:00 / ' + formatTime(dur);
             playerProgress.max = Math.floor(dur * 100) || 100;
         };
 
         audioPlayer.onended = function() {
             btnPlayPause.textContent = '▶';
             playerProgress.value = 0;
-            timeCurrent.textContent = '00:00';
+            playerTimesInline.textContent = '00:00 / ' + formatTime(audioPlayer.duration || 0);
         };
     }
 
@@ -1077,6 +1151,11 @@ enum VoxBoxHTML {
     btnPlayPause.addEventListener('click', function() {
         if (!lastAudioBlob) return;
         if (audioPlayer.paused || audioPlayer.ended) {
+            // Ensure we have a valid source
+            if (!audioPlayer.src || audioPlayer.ended) {
+                var url = createPlaybackURL(lastAudioBlob);
+                audioPlayer.src = url;
+            }
             audioPlayer.play().catch(function(e) {
                 console.warn('[VoxBox] Playback failed:', e);
             });
@@ -1090,9 +1169,10 @@ enum VoxBoxHTML {
     // ── Player: Time update ──
     audioPlayer.addEventListener('timeupdate', function() {
         if (!playerSeeking && audioPlayer.duration) {
-            var pct = (audioPlayer.currentTime / audioPlayer.duration) * 100;
-            playerProgress.value = Math.floor(audioPlayer.currentTime * 100);
-            timeCurrent.textContent = formatTime(audioPlayer.currentTime);
+            var cur = audioPlayer.currentTime;
+            var dur = audioPlayer.duration;
+            playerProgress.value = Math.floor(cur * 100);
+            playerTimesInline.textContent = formatTime(cur) + ' / ' + formatTime(dur);
         }
     });
 
@@ -1108,7 +1188,8 @@ enum VoxBoxHTML {
     playerProgress.addEventListener('input', function() {
         playerSeeking = true;
         var seekTime = parseInt(playerProgress.value) / 100;
-        timeCurrent.textContent = formatTime(seekTime);
+        var dur = audioPlayer.duration || 0;
+        playerTimesInline.textContent = formatTime(seekTime) + ' / ' + formatTime(dur);
     });
 
     playerProgress.addEventListener('change', function() {
@@ -1122,24 +1203,13 @@ enum VoxBoxHTML {
     // ── Player: Replay ──
     btnReplay.addEventListener('click', function() {
         if (!lastAudioBlob) return;
+        // Create fresh URL to ensure playback works
+        var url = createPlaybackURL(lastAudioBlob);
+        audioPlayer.src = url;
         audioPlayer.currentTime = 0;
         audioPlayer.play().catch(function(e) {
             console.warn('[VoxBox] Replay failed:', e);
         });
-    });
-
-    // ── Player: Download ──
-    btnDownloadAudio.addEventListener('click', function() {
-        if (!lastAudioBlob) return;
-        var url = URL.createObjectURL(lastAudioBlob);
-        var a = document.createElement('a');
-        a.href = url;
-        var fname = (lastText || 'voxbox_audio').replace(/[^a-zA-Z0-9 _-]/g, '').trim() || 'voxbox_audio';
-        a.download = fname + '.wav';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
     });
 
     // ── Core: call TTS API ──
@@ -1161,7 +1231,6 @@ enum VoxBoxHTML {
             response_format: 'wav'
         };
 
-        // Add voice parameters if a voice is selected
         if (voice) {
             body.voice = voice;
             body.voice_mode = voiceMode;
@@ -1189,15 +1258,11 @@ enum VoxBoxHTML {
 
     // ── Play audio from blob ──
     function playAudioBlob(blob) {
-        var url = URL.createObjectURL(blob);
+        var url = createPlaybackURL(blob);
         audioPlayer.src = url;
         audioPlayer.play().catch(function(e) {
             console.warn('[VoxBox] Audio playback failed:', e);
         });
-        audioPlayer.onended = function() {
-            URL.revokeObjectURL(url);
-            btnPlayPause.textContent = '▶';
-        };
     }
 
     // ── Generate & Play ──
@@ -1209,43 +1274,40 @@ enum VoxBoxHTML {
 
         lastText = text;
         setGenerating(true);
-        setStatus('generating', 'Generating speech…');
+        setStatus('generating', _('generating'));
 
         callTTS(text).then(function(blob) {
             lastAudioBlob = blob;
             setGenerating(false);
-            setStatus('success', '✓ Audio generated — playing now');
+            setStatus('success', _('successPlay'));
             showPlayer(text, blob);
             playAudioBlob(blob);
         }).catch(function(err) {
             setGenerating(false);
-            setStatus('error', '✗ ' + err.message);
+            setStatus('error', _('errorPrefix') + err.message);
             console.error('[VoxBox] TTS error:', err);
         });
     });
 
-    // ── Generate & Save ──
+    // ── Save Audio → triggers native NSSavePanel via bridge ──
     btnGenerateSave.addEventListener('click', function() {
-        if (isGenerating) return;
-
-        var text = textInput.value.trim();
-        if (!text || text.length > 2000) return;
-
-        lastText = text;
-        setGenerating(true);
-        setStatus('generating', 'Generating speech…');
-
-        callTTS(text).then(function(blob) {
-            lastAudioBlob = blob;
-            setGenerating(false);
-            setStatus('success', '✓ Audio saved to VoxBox Output');
-            showPlayer(text, blob);
-            showToast('🎵 Saved to VoxBox Output');
-        }).catch(function(err) {
-            setGenerating(false);
-            setStatus('error', '✗ ' + err.message);
-            console.error('[VoxBox] TTS error:', err);
-        });
+        if (!lastAudioBlob) return;
+        // Send message to Swift to open save panel
+        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.voxbox) {
+            window.webkit.messageHandlers.voxbox.postMessage({type: 'saveAudio'});
+            showToast(_('toastSaved') + _('toastVoxBoxOutput'));
+        } else {
+            // Fallback: download in browser
+            var url = URL.createObjectURL(lastAudioBlob);
+            var a = document.createElement('a');
+            a.href = url;
+            var fname = (lastText || 'voxbox_audio').replace(/[^a-zA-Z0-9 _-]/g, '').trim() || 'voxbox_audio';
+            a.download = fname + '.wav';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+        }
     });
 
     // ── Keyboard shortcut: ⌘↵ to generate & play ──
@@ -1259,11 +1321,12 @@ enum VoxBoxHTML {
     });
 
     // ── Init ──
+    applyL10n();
     updateCharCount();
     textInput.focus();
     loadVoices();
 
-    console.log('[VoxBox] Native frontend ready · Port ' + SERVER_PORT);
+    console.log('[VoxBox] Native frontend ready · Port ' + SERVER_PORT + ' · ' + (IS_CHINESE ? '中文' : 'English'));
 })();
 </script>
 </body>
@@ -1326,7 +1389,8 @@ struct WebView: NSViewRepresentable {
         webView.uiDelegate = context.coordinator
 
         // ── Load local HTML ──
-        let html = VoxBoxHTML.html(port: port)
+        let isChinese = LocalizationManager.shared.isChinese
+        let html = VoxBoxHTML.html(port: port, isChinese: isChinese)
         webView.loadHTMLString(html, baseURL: nil)
 
         return webView
@@ -1392,21 +1456,21 @@ struct WebView: NSViewRepresentable {
         var notif = document.createElement('div');
         notif.id = 'voxbox-notification';
         notif.innerHTML =
-            '<div style="display:flex;align-items:center;gap:6px;padding:5px 10px;' +
+            '<div style="display:flex;align-items:center;gap:8px;padding:8px 14px;' +
             'background:rgba(22,22,40,0.9);color:#e2e8f0;' +
-            'border-radius:8px;font-size:11px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;' +
-            'box-shadow:0 3px 16px rgba(0,0,0,0.25);pointer-events:auto;max-width:400px;' +
-            'border:1px solid rgba(255,255,255,0.07);line-height:1.4;">' +
-            '<span style="white-space:nowrap;font-weight:500;">\(toastMsg)</span>' +
+            'border-radius:10px;font-size:13px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;' +
+            'box-shadow:0 4px 20px rgba(0,0,0,0.3);pointer-events:auto;max-width:460px;' +
+            'border:1px solid rgba(255,255,255,0.07);line-height:1.5;">' +
+            '<span style="white-space:nowrap;font-weight:600;">\(toastMsg)</span>' +
             '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#94a3b8;">· ' +
                 escapeHTML(displayText) +
             '</span>' +
-            '<button id="voxbox-notif-open" title="\(openLabel)" style="padding:2px 5px;background:rgba(255,255,255,0.08);color:#e2e8f0;border:1px solid rgba(255,255,255,0.1);' +
-                'border-radius:5px;cursor:pointer;font-size:12px;line-height:1;transition:background 0.15s;">' +
+            '<button id="voxbox-notif-open" title="\(openLabel)" style="padding:3px 8px;background:rgba(255,255,255,0.08);color:#e2e8f0;border:1px solid rgba(255,255,255,0.1);' +
+                'border-radius:6px;cursor:pointer;font-size:13px;line-height:1;transition:background 0.15s;">' +
                 '\(openLabel)' +
             '</button>' +
-            '<button id="voxbox-notif-close" style="padding:1px 3px;background:transparent;color:#94a3b8;' +
-                'border:none;cursor:pointer;font-size:13px;line-height:1;transition:color 0.15s;">' +
+            '<button id="voxbox-notif-close" style="padding:2px 4px;background:transparent;color:#94a3b8;' +
+                'border:none;cursor:pointer;font-size:15px;line-height:1;transition:color 0.15s;">' +
                 '✕' +
             '</button>' +
             '</div>';
