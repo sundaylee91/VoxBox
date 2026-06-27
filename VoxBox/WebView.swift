@@ -339,6 +339,77 @@ enum VoxBoxHTML {
         background: var(--btn-secondary-hover-bg);
     }
 
+    /* ── Character Presets Section ── */
+    .character-section {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .character-row {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+    }
+
+    .character-select {
+        flex: 1;
+        padding: 8px 12px;
+        font-family: inherit;
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--text-primary);
+        background: var(--input-bg);
+        border: 1.5px solid var(--input-border);
+        border-radius: 10px;
+        outline: none;
+        cursor: pointer;
+        transition: border-color 0.2s ease;
+        -webkit-appearance: none;
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2398989d'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 12px center;
+        padding-right: 30px;
+    }
+
+    .character-select:focus {
+        border-color: var(--input-focus-border);
+    }
+
+    .character-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        background: var(--input-bg);
+        color: var(--text-secondary);
+        border: 1.5px solid var(--input-border);
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 14px;
+        transition: all 0.15s ease;
+        flex-shrink: 0;
+    }
+
+    .character-btn:hover {
+        background: var(--btn-secondary-hover-bg);
+        border-color: rgba(0,122,255,0.3);
+    }
+
+    .character-btn.danger:hover {
+        border-color: #FF453A;
+        color: #FF453A;
+        background: rgba(255,69,58,0.06);
+    }
+
+    .character-btn:disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
+        pointer-events: none;
+    }
+
     /* ── Advanced Settings Toggle ── */
     .advanced-toggle {
         display: flex;
@@ -387,8 +458,8 @@ enum VoxBoxHTML {
     .setting-row {
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        gap: 12px;
+        justify-content: flex-start;
+        gap: 10px;
     }
 
     .setting-label {
@@ -397,29 +468,31 @@ enum VoxBoxHTML {
         color: var(--text-secondary);
         white-space: nowrap;
         letter-spacing: -0.1px;
+        min-width: 88px;
     }
 
     .setting-value {
         font-size: 12px;
         font-weight: 600;
         color: var(--text-primary);
-        min-width: 38px;
+        min-width: 44px;
         text-align: right;
     }
 
     /* ── Slider ── */
-    input[type="range"] {
+    .setting-row input[type="range"] {
         -webkit-appearance: none;
         appearance: none;
-        width: 140px;
+        width: 130px;
         height: 6px;
         border-radius: 3px;
         background: var(--slider-track);
         outline: none;
         cursor: pointer;
+        flex-shrink: 0;
     }
 
-    input[type="range"]::-webkit-slider-thumb {
+    .setting-row input[type="range"]::-webkit-slider-thumb {
         -webkit-appearance: none;
         width: 20px;
         height: 20px;
@@ -431,7 +504,7 @@ enum VoxBoxHTML {
         transition: box-shadow 0.15s ease;
     }
 
-    input[type="range"]::-webkit-slider-thumb:active {
+    .setting-row input[type="range"]::-webkit-slider-thumb:active {
         box-shadow: 0 0 0 6px rgba(0,122,255,0.18);
     }
 
@@ -582,23 +655,25 @@ enum VoxBoxHTML {
         border: 1px solid var(--card-border);
         border-radius: 16px;
         box-shadow: var(--card-shadow);
-        padding: 16px 18px 14px;
+        padding: 0;
         display: none;
         flex-direction: column;
-        gap: 10px;
+        gap: 0;
         backdrop-filter: blur(20px);
         -webkit-backdrop-filter: blur(20px);
+        overflow: hidden;
     }
 
     .player-card.visible {
         display: flex;
     }
 
-    /* Progress bar — full width row */
+    /* Progress bar — full width, edge-to-edge */
     .player-progress-row {
         width: 100%;
         display: flex;
         align-items: center;
+        padding: 14px 0 4px 0;
     }
 
     .player-progress {
@@ -606,16 +681,17 @@ enum VoxBoxHTML {
         appearance: none;
         width: 100%;
         height: 5px;
-        border-radius: 3px;
+        border-radius: 0;
         background: var(--player-progress-track);
         outline: none;
         cursor: pointer;
+        margin: 0;
     }
 
     .player-progress::-webkit-slider-thumb {
         -webkit-appearance: none;
-        width: 16px;
-        height: 16px;
+        width: 18px;
+        height: 18px;
         border-radius: 50%;
         background: var(--slider-fill);
         border: 2px solid #ffffff;
@@ -629,6 +705,7 @@ enum VoxBoxHTML {
         align-items: center;
         gap: 10px;
         width: 100%;
+        padding: 4px 16px 12px 16px;
     }
 
     .player-filename {
@@ -761,45 +838,59 @@ enum VoxBoxHTML {
         <!-- Voice Preset -->
         <div class="voice-section">
             <div class="setting-row">
-                <span class="setting-label" data-l10n="voiceLabel">🎤 Voice</span>
+                <span class="setting-label" data-l10n="voiceLabel">🎤 语音</span>
                 <button class="voice-refresh" id="voice-refresh" data-l10n-title="refreshVoices" title="Refresh voices">↻</button>
             </div>
             <div class="voice-row">
                 <select id="voice-select" class="voice-select">
-                    <option value="" data-l10n="loadingVoices">Loading voices…</option>
+                    <option value="" data-l10n="loadingVoices">加载中…</option>
                 </select>
                 <select id="voice-mode-select" class="voice-mode-select">
                     <option value="reference">Reference</option>
-                    <option value="high_similarity" data-l10n="highSim">High Sim</option>
+                    <option value="high_similarity" data-l10n="highSim">高相似度</option>
                 </select>
+            </div>
+        </div>
+
+        <!-- Character Presets -->
+        <div class="character-section">
+            <div class="setting-row">
+                <span class="setting-label" data-l10n="characterLabel">🎭 角色</span>
+            </div>
+            <div class="character-row">
+                <select id="character-select" class="character-select">
+                    <option value="" data-l10n="noCharacter">未选择角色…</option>
+                </select>
+                <button class="character-btn" id="btn-save-character" data-l10n-title="saveCharacter" title="保存当前为角色">💾</button>
+                <button class="character-btn danger" id="btn-delete-character" data-l10n-title="deleteCharacter" title="删除选中角色" disabled>🗑</button>
             </div>
         </div>
 
         <!-- Advanced Settings Toggle -->
         <button class="advanced-toggle" id="advanced-toggle">
-            <span data-l10n="advancedSettings">Advanced Settings</span>
+            <span data-l10n="advancedSettings">高级设置</span>
             <span class="chevron">▾</span>
         </button>
 
         <!-- Advanced Panel -->
         <div class="advanced-panel" id="advanced-panel">
             <div class="setting-row">
-                <span class="setting-label" data-l10n="speed">Speed</span>
+                <span class="setting-label" data-l10n="speed">语速</span>
                 <input type="range" id="speed-slider" min="0.5" max="2.0" step="0.1" value="1.0">
                 <span class="setting-value" id="speed-value">1.0x</span>
             </div>
             <div class="setting-row">
-                <span class="setting-label" data-l10n="sampleRate">Sample Rate</span>
+                <span class="setting-label" data-l10n="sampleRate">采样率</span>
                 <input type="range" id="sample-rate-slider" min="16000" max="48000" step="1000" value="24000">
                 <span class="setting-value" id="sample-rate-value">24 kHz</span>
             </div>
             <div class="setting-row">
-                <span class="setting-label" data-l10n="cfgScale">CFG Scale</span>
+                <span class="setting-label" data-l10n="cfgScale">CFG 缩放</span>
                 <input type="range" id="cfg-slider" min="1.0" max="4.0" step="0.1" value="2.0">
                 <span class="setting-value" id="cfg-value">2.0</span>
             </div>
             <div class="setting-row">
-                <span class="setting-label" data-l10n="timesteps">Timesteps</span>
+                <span class="setting-label" data-l10n="timesteps">推理步数</span>
                 <input type="range" id="timesteps-slider" min="4" max="30" step="1" value="10">
                 <span class="setting-value" id="timesteps-value">10</span>
             </div>
@@ -809,16 +900,16 @@ enum VoxBoxHTML {
         <div class="btn-row">
             <button class="btn btn-primary" id="btn-generate-play" disabled>
                 <span id="btn-icon-play">▶</span>
-                <span id="btn-text-play" data-l10n="generateAndPlay">Generate &amp; Play</span>
+                <span id="btn-text-play" data-l10n="generateAndPlay">生成并播放</span>
             </button>
             <button class="btn btn-secondary" id="btn-generate-save" disabled>
                 <span>💾</span>
-                <span data-l10n="saveAudio">Save Audio</span>
+                <span data-l10n="saveAudio">保存音频</span>
             </button>
         </div>
 
         <!-- Status -->
-        <div class="status idle" id="status" data-l10n="ready">Ready</div>
+        <div class="status idle" id="status" data-l10n="ready">就绪</div>
     </div>
 
     <!-- Audio Player -->
@@ -829,16 +920,16 @@ enum VoxBoxHTML {
         </div>
         <!-- Controls: play btn, filename, time, replay btn -->
         <div class="player-controls-row">
-            <button class="player-btn play-btn" id="btn-play-pause" data-l10n-title="playPause" title="Play / Pause">▶</button>
+            <button class="player-btn play-btn" id="btn-play-pause" data-l10n-title="playPause" title="播放 / 暂停">▶</button>
             <span class="player-filename" id="player-filename"></span>
             <span class="player-times-inline" id="player-times-inline">00:00 / 00:00</span>
-            <button class="player-btn" id="btn-replay" data-l10n-title="replay" title="Replay">↺</button>
+            <button class="player-btn" id="btn-replay" data-l10n-title="replay" title="重新播放">↺</button>
         </div>
     </div>
 </div>
 
 <!-- Hidden audio player -->
-<audio id="audio-player"></audio>
+<audio id="audio-player" preload="auto"></audio>
 
 <script>
 (function() {
@@ -863,6 +954,15 @@ enum VoxBoxHTML {
         noVoices: IS_CHINESE ? '未找到预设语音' : 'No preset voices found',
         loadFailed: IS_CHINESE ? '加载失败' : 'Failed to load voices',
         highSim: IS_CHINESE ? '高相似度' : 'High Sim',
+        // Character
+        characterLabel: IS_CHINESE ? '🎭 角色' : '🎭 Character',
+        noCharacter: IS_CHINESE ? '未选择角色…' : 'No character selected…',
+        saveCharacter: IS_CHINESE ? '保存当前设置为角色' : 'Save current settings as character',
+        deleteCharacter: IS_CHINESE ? '删除选中角色' : 'Delete selected character',
+        characterNamePrompt: IS_CHINESE ? '请输入角色名称：' : 'Enter character name:',
+        characterSaved: IS_CHINESE ? '角色已保存' : 'Character saved',
+        characterDeleted: IS_CHINESE ? '角色已删除' : 'Character deleted',
+        confirmDelete: IS_CHINESE ? '确定要删除该角色吗？' : 'Delete this character?',
         // Advanced
         advancedSettings: IS_CHINESE ? '高级设置' : 'Advanced Settings',
         speed: IS_CHINESE ? '语速' : 'Speed',
@@ -875,7 +975,7 @@ enum VoxBoxHTML {
         // Status
         ready: IS_CHINESE ? '就绪' : 'Ready',
         generating: IS_CHINESE ? '正在生成语音…' : 'Generating speech…',
-        successPlay: IS_CHINESE ? '✓ 音频已生成 — 正在播放' : '✓ Audio generated — playing now',
+        successPlay: IS_CHINESE ? '✓ 音频已生成' : '✓ Audio generated',
         successSaved: IS_CHINESE ? '✓ 音频已保存' : '✓ Audio saved',
         errorPrefix: IS_CHINESE ? '✗ ' : '✗ ',
         // Player
@@ -884,7 +984,7 @@ enum VoxBoxHTML {
         playerTitle: IS_CHINESE ? '🔊 音频播放器' : '🔊 Audio Player',
         generatedAudio: IS_CHINESE ? '生成的音频' : 'Generated Audio',
         // Toast
-        toastSaved: IS_CHINESE ? '💾 音频已保存至' : '💾 Audio saved to ',
+        toastSaved: IS_CHINESE ? '💾 音频已保存至 ' : '💾 Audio saved to ',
         toastVoxBoxOutput: IS_CHINESE ? 'VoxBox Output 文件夹' : 'VoxBox Output folder'
     };
 
@@ -904,7 +1004,6 @@ enum VoxBoxHTML {
             var key = el.getAttribute('data-l10n-title');
             if (L10N[key]) el.title = L10N[key];
         });
-        // Update clear button title
         var clearBtn = document.getElementById('clear-btn');
         if (clearBtn) clearBtn.title = _('clearBtnTitle');
     }
@@ -932,6 +1031,9 @@ enum VoxBoxHTML {
     var voiceSelect = document.getElementById('voice-select');
     var voiceModeSelect = document.getElementById('voice-mode-select');
     var voiceRefresh = document.getElementById('voice-refresh');
+    var characterSelect = document.getElementById('character-select');
+    var btnSaveCharacter = document.getElementById('btn-save-character');
+    var btnDeleteCharacter = document.getElementById('btn-delete-character');
     var btnGeneratePlay = document.getElementById('btn-generate-play');
     var btnGenerateSave = document.getElementById('btn-generate-save');
     var btnIconPlay = document.getElementById('btn-icon-play');
@@ -955,6 +1057,7 @@ enum VoxBoxHTML {
     var availableVoices = [];
     var playerSeeking = false;
     var currentBlobURL = null;
+    var characters = [];
 
     // ── Format time ──
     function formatTime(seconds) {
@@ -963,6 +1066,128 @@ enum VoxBoxHTML {
         var s = Math.floor(seconds % 60);
         return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
     }
+
+    // ── Character Presets ──
+    var CHARACTERS_KEY = 'voxbox_characters';
+
+    function loadCharacters() {
+        try {
+            var raw = localStorage.getItem(CHARACTERS_KEY);
+            characters = raw ? JSON.parse(raw) : [];
+            if (!Array.isArray(characters)) characters = [];
+        } catch(e) {
+            characters = [];
+        }
+        refreshCharacterDropdown();
+    }
+
+    function saveCharacters() {
+        try {
+            localStorage.setItem(CHARACTERS_KEY, JSON.stringify(characters));
+        } catch(e) {
+            console.warn('[VoxBox] Failed to save characters:', e);
+        }
+    }
+
+    function getCurrentSettings() {
+        return {
+            voice: voiceSelect.value,
+            voice_mode: voiceModeSelect.value,
+            speed: parseFloat(speedSlider.value),
+            sample_rate: parseInt(sampleRateSlider.value),
+            cfg_value: parseFloat(cfgSlider.value),
+            inference_timesteps: parseInt(timestepsSlider.value)
+        };
+    }
+
+    function applySettings(settings) {
+        if (!settings) return;
+        // Voice
+        if (settings.voice !== undefined) {
+            voiceSelect.value = settings.voice;
+        }
+        if (settings.voice_mode !== undefined) {
+            voiceModeSelect.value = settings.voice_mode;
+        }
+        // Sliders
+        if (settings.speed !== undefined) {
+            speedSlider.value = settings.speed;
+            speedValue.textContent = settings.speed.toFixed(1) + 'x';
+        }
+        if (settings.sample_rate !== undefined) {
+            sampleRateSlider.value = settings.sample_rate;
+            sampleRateValue.textContent = (settings.sample_rate / 1000).toFixed(0) + ' kHz';
+        }
+        if (settings.cfg_value !== undefined) {
+            cfgSlider.value = settings.cfg_value;
+            cfgValue.textContent = settings.cfg_value.toFixed(1);
+        }
+        if (settings.inference_timesteps !== undefined) {
+            timestepsSlider.value = settings.inference_timesteps;
+            timestepsValue.textContent = settings.inference_timesteps;
+        }
+    }
+
+    function refreshCharacterDropdown() {
+        var sel = characterSelect;
+        sel.innerHTML = '';
+        var defaultOpt = document.createElement('option');
+        defaultOpt.value = '';
+        defaultOpt.textContent = _('noCharacter');
+        sel.appendChild(defaultOpt);
+
+        characters.forEach(function(ch, idx) {
+            var opt = document.createElement('option');
+            opt.value = String(idx);
+            opt.textContent = ch.name || ('Character ' + (idx + 1));
+            sel.appendChild(opt);
+        });
+
+        // Update delete button state
+        btnDeleteCharacter.disabled = (sel.value === '');
+    }
+
+    characterSelect.addEventListener('change', function() {
+        var idx = parseInt(characterSelect.value);
+        btnDeleteCharacter.disabled = isNaN(idx) || idx < 0 || idx >= characters.length;
+
+        if (!isNaN(idx) && idx >= 0 && idx < characters.length) {
+            var ch = characters[idx];
+            applySettings(ch.settings);
+            showToast((IS_CHINESE ? '已加载角色：' : 'Loaded: ') + ch.name);
+        }
+    });
+
+    btnSaveCharacter.addEventListener('click', function() {
+        var name = prompt(_('characterNamePrompt'), '');
+        if (!name || !name.trim()) return;
+        name = name.trim();
+
+        var settings = getCurrentSettings();
+        characters.push({ name: name, settings: settings });
+        saveCharacters();
+        refreshCharacterDropdown();
+
+        // Select the newly saved character
+        characterSelect.value = String(characters.length - 1);
+        btnDeleteCharacter.disabled = false;
+
+        showToast(_('characterSaved') + ': ' + name);
+    });
+
+    btnDeleteCharacter.addEventListener('click', function() {
+        var idx = parseInt(characterSelect.value);
+        if (isNaN(idx) || idx < 0 || idx >= characters.length) return;
+
+        if (!confirm(_('confirmDelete'))) return;
+
+        var name = characters[idx].name;
+        characters.splice(idx, 1);
+        saveCharacters();
+        refreshCharacterDropdown();
+        btnDeleteCharacter.disabled = true;
+        showToast(_('characterDeleted') + ': ' + name);
+    });
 
     // ── Load available voices ──
     function loadVoices() {
@@ -1033,7 +1258,6 @@ enum VoxBoxHTML {
 
         var hasText = len > 0 && len <= max;
         btnGeneratePlay.disabled = !hasText || isGenerating;
-        // Save button: enabled only when text present AND audio already generated
         btnGenerateSave.disabled = !lastAudioBlob || isGenerating;
     }
 
@@ -1108,7 +1332,6 @@ enum VoxBoxHTML {
 
     // ── Create fresh blob URL for playback ──
     function createPlaybackURL(blob) {
-        // Revoke previous URL if any
         if (currentBlobURL) {
             URL.revokeObjectURL(currentBlobURL);
             currentBlobURL = null;
@@ -1130,14 +1353,16 @@ enum VoxBoxHTML {
         // Update save button state
         btnGenerateSave.disabled = !lastAudioBlob || isGenerating;
 
-        // Create fresh playback URL
+        // Create persistent playback URL
         var url = createPlaybackURL(blob);
         audioPlayer.src = url;
+        audioPlayer.load();
 
         audioPlayer.onloadedmetadata = function() {
             var dur = audioPlayer.duration;
             playerTimesInline.textContent = '00:00 / ' + formatTime(dur);
             playerProgress.max = Math.floor(dur * 100) || 100;
+            playerProgress.value = 0;
         };
 
         audioPlayer.onended = function() {
@@ -1153,8 +1378,11 @@ enum VoxBoxHTML {
         if (audioPlayer.paused || audioPlayer.ended) {
             // Ensure we have a valid source
             if (!audioPlayer.src || audioPlayer.ended) {
-                var url = createPlaybackURL(lastAudioBlob);
-                audioPlayer.src = url;
+                // Reload if ended
+                if (currentBlobURL) {
+                    audioPlayer.src = currentBlobURL;
+                    audioPlayer.load();
+                }
             }
             audioPlayer.play().catch(function(e) {
                 console.warn('[VoxBox] Playback failed:', e);
@@ -1200,13 +1428,12 @@ enum VoxBoxHTML {
         }
     });
 
-    // ── Player: Replay ──
+    // ── Player: Instant Replay (no delay) ──
     btnReplay.addEventListener('click', function() {
         if (!lastAudioBlob) return;
-        // Create fresh URL to ensure playback works
-        var url = createPlaybackURL(lastAudioBlob);
-        audioPlayer.src = url;
+        // Just seek to 0 and play — blob URL already loaded
         audioPlayer.currentTime = 0;
+        playerProgress.value = 0;
         audioPlayer.play().catch(function(e) {
             console.warn('[VoxBox] Replay failed:', e);
         });
@@ -1260,6 +1487,7 @@ enum VoxBoxHTML {
     function playAudioBlob(blob) {
         var url = createPlaybackURL(blob);
         audioPlayer.src = url;
+        audioPlayer.load();
         audioPlayer.play().catch(function(e) {
             console.warn('[VoxBox] Audio playback failed:', e);
         });
@@ -1292,7 +1520,6 @@ enum VoxBoxHTML {
     // ── Save Audio → triggers native NSSavePanel via bridge ──
     btnGenerateSave.addEventListener('click', function() {
         if (!lastAudioBlob) return;
-        // Send message to Swift to open save panel
         if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.voxbox) {
             window.webkit.messageHandlers.voxbox.postMessage({type: 'saveAudio'});
             showToast(_('toastSaved') + _('toastVoxBoxOutput'));
@@ -1325,6 +1552,7 @@ enum VoxBoxHTML {
     updateCharCount();
     textInput.focus();
     loadVoices();
+    loadCharacters();
 
     console.log('[VoxBox] Native frontend ready · Port ' + SERVER_PORT + ' · ' + (IS_CHINESE ? '中文' : 'English'));
 })();
@@ -1332,6 +1560,7 @@ enum VoxBoxHTML {
 </body>
 </html>
 """
+
 }
 
 // MARK: - WebView
