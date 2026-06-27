@@ -52,7 +52,7 @@ struct VoxBoxApp: App {
     private var menuBarIcon: String {
         switch serverManager.status {
         case .running: return "waveform.circle.fill"
-        case .starting, .downloading: return "arrow.triangle.2.circlepath.circle"
+        case .starting, .downloading, .warmingUp: return "arrow.triangle.2.circlepath.circle"
         case .stopped: return "waveform.circle"
         case .error: return "exclamationmark.circle"
         }
