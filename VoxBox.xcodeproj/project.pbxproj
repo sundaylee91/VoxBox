@@ -18,6 +18,7 @@
 		A100000131 /* LoadingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000131 /* LoadingView.swift */; };
 		A100000132 /* ErrorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000132 /* ErrorView.swift */; };
 		A100000133 /* LocalizationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000133 /* LocalizationManager.swift */; };
+		A100000160 /* index.html in Resources */ = {isa = PBXBuildFile; fileRef = A200000160 /* index.html */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -36,6 +37,7 @@
 		A200000140 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A200000141 /* VoxBox.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = VoxBox.entitlements; sourceTree = "<group>"; };
 		A200000150 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A200000160 /* index.html */ = {isa = PBXFileReference; lastKnownFileType = text.html; path = index.html; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -64,6 +66,7 @@
 				A200000140 /* Info.plist */,
 				A200000141 /* VoxBox.entitlements */,
 				A200000150 /* Assets.xcassets */,
+				A300000160 /* Frontend */,
 			);
 			path = VoxBox;
 			sourceTree = "<group>";
@@ -74,6 +77,14 @@
 				A200000100 /* VoxBox.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		A300000160 /* Frontend */ = {
+			isa = PBXGroup;
+			children = (
+				A200000160 /* index.html */,
+			);
+			path = Frontend;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -128,6 +139,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A100000160 /* index.html in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
