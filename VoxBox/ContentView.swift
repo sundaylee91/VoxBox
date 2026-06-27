@@ -3,14 +3,14 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject var serverManager: ServerManager
     @State private var showSettings = false
-    
+
     var body: some View {
         ZStack {
             LinearGradient(
                 colors: [Color(nsColor: .windowBackgroundColor), Color(nsColor: .controlBackgroundColor)],
                 startPoint: .top, endPoint: .bottom
             ).ignoresSafeArea()
-            
+
             Group {
                 switch serverManager.status {
                 case .stopped:
@@ -27,6 +27,9 @@ struct ContentView: View {
                         onAudioCaptured: { data, text in
                             serverManager.lastAudioData = data
                             serverManager.lastAudioText = text
+                        },
+                        onSaveRequested: {
+                            serverManager.saveAudio()
                         }
                     )
                 case .error(let message):
@@ -38,7 +41,7 @@ struct ContentView: View {
                     .environmentObject(serverManager)
                 }
             }
-            
+
             VStack {
                 HStack {
                     Spacer()
@@ -71,11 +74,11 @@ struct WarmingUpView: View {
     @State private var isAnimating = false
     @State private var dots = 0
     let timer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
-    
+
     var body: some View {
         VStack(spacing: 32) {
             Spacer()
-            
+
             ZStack {
                 Circle().stroke(Color.blue.opacity(0.15), lineWidth: 6).frame(width: 64, height: 64)
                 Circle()
@@ -87,7 +90,7 @@ struct WarmingUpView: View {
                     .animation(.linear(duration: 1.2).repeatForever(autoreverses: false), value: isAnimating)
             }
             .onAppear { isAnimating = true }
-            
+
             VStack(spacing: 8) {
                 Text("Server is warming up\(String(repeating: ".", count: dots))")
                     .font(.headline)
@@ -99,7 +102,7 @@ struct WarmingUpView: View {
                     .foregroundStyle(.tertiary)
                     .monospaced()
             }
-            
+
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -110,7 +113,7 @@ struct WarmingUpView: View {
 
 struct StatusBadge: View {
     let status: ServerManager.ServerStatus
-    
+
     var body: some View {
         HStack(spacing: 6) {
             Circle().fill(statusColor).frame(width: 8, height: 8)
@@ -119,7 +122,7 @@ struct StatusBadge: View {
         .padding(.horizontal, 10).padding(.vertical, 4)
         .background(RoundedRectangle(cornerRadius: 20).fill(Color(nsColor: .quaternaryLabelColor)))
     }
-    
+
     private var statusColor: Color {
         switch status {
         case .running: return .green
@@ -128,7 +131,7 @@ struct StatusBadge: View {
         case .error: return .red
         }
     }
-    
+
     private var statusLabel: String {
         switch status {
         case .running: return "Running"
