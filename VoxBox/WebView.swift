@@ -1,5 +1,6 @@
 import SwiftUI
 import WebKit
+import UniformTypeIdentifiers
 
 // MARK: - VoxBox Local Frontend HTML
 
@@ -203,7 +204,6 @@ enum VoxBoxHTML {
         display: flex;
     }
 
-    /* Progress bar — with side padding */
     .player-progress-row {
         width: 100%;
         display: flex;
@@ -234,7 +234,6 @@ enum VoxBoxHTML {
         cursor: pointer;
     }
 
-    /* Controls row: play btn + filename + time + replay btn */
     .player-controls-row {
         display: flex;
         align-items: center;
@@ -456,7 +455,6 @@ enum VoxBoxHTML {
         background: var(--btn-secondary-hover-bg);
     }
 
-    /* ── Voice Preset Save/Delete buttons (inline in voice-row) ── */
     .voice-preset-btn {
         display: flex;
         align-items: center;
@@ -535,6 +533,10 @@ enum VoxBoxHTML {
         margin-top: 2px;
     }
 
+    .advanced-panel.create-voice-panel.open {
+        max-height: 400px;
+    }
+
     .setting-row {
         display: flex;
         align-items: center;
@@ -587,6 +589,92 @@ enum VoxBoxHTML {
     .setting-row input[type="range"]::-webkit-slider-thumb:active {
         box-shadow: 0 0 0 6px rgba(0,122,255,0.18);
     }
+
+    /* ── Create Voice Inputs ── */
+    .create-voice-input {
+        flex: 1;
+        padding: 8px 12px;
+        font-family: inherit;
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--text-primary);
+        background: var(--input-bg);
+        border: 1.5px solid var(--input-border);
+        border-radius: 10px;
+        outline: none;
+        transition: border-color 0.2s ease;
+        -webkit-appearance: none;
+    }
+
+    .create-voice-input:focus {
+        border-color: var(--input-focus-border);
+    }
+
+    .create-voice-textarea {
+        flex: 1;
+        min-height: 50px;
+        padding: 8px 12px;
+        font-family: inherit;
+        font-size: 13px;
+        font-weight: 400;
+        line-height: 1.4;
+        color: var(--text-primary);
+        background: var(--input-bg);
+        border: 1.5px solid var(--input-border);
+        border-radius: 10px;
+        resize: vertical;
+        outline: none;
+        transition: border-color 0.2s ease;
+        -webkit-appearance: none;
+    }
+
+    .create-voice-textarea:focus {
+        border-color: var(--input-focus-border);
+    }
+
+    .pick-audio-btn {
+        padding: 8px 14px;
+        font-family: inherit;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-primary);
+        background: var(--input-bg);
+        border: 1.5px solid var(--input-border);
+        border-radius: 10px;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        white-space: nowrap;
+    }
+
+    .pick-audio-btn:hover {
+        border-color: rgba(0,122,255,0.3);
+        background: var(--btn-secondary-hover-bg);
+    }
+
+    .audio-path-display {
+        flex: 1;
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--text-tertiary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+    }
+
+    .create-voice-status {
+        font-size: 11px;
+        font-weight: 500;
+        min-height: 16px;
+        line-height: 16px;
+        text-align: center;
+        transition: color 0.3s ease;
+    }
+
+    .create-voice-status.idle { color: var(--text-tertiary); }
+    .create-voice-status.creating { color: var(--status-info); }
+    .create-voice-status.success { color: var(--status-success); }
+    .create-voice-status.error { color: var(--status-error); }
 
     /* ── Buttons ── */
     .btn-row {
@@ -659,6 +747,32 @@ enum VoxBoxHTML {
 
     .btn-secondary:active:not(:disabled) {
         background: rgba(0,122,255,0.08);
+    }
+
+    .btn-create-voice {
+        width: 100%;
+        padding: 10px 20px;
+        font-family: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        color: #ffffff;
+        background: linear-gradient(135deg, #30D158 0%, #34C759 100%);
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        box-shadow: 0 2px 10px rgba(48,209,88,0.25);
+    }
+
+    .btn-create-voice:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 18px rgba(48,209,88,0.35);
+    }
+
+    .btn-create-voice:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+        pointer-events: none;
     }
 
     /* ── Status message ── */
@@ -821,7 +935,7 @@ enum VoxBoxHTML {
                     <option value="high_similarity" data-l10n="highSim">高相似度</option>
                 </select>
                 <button class="voice-preset-btn" id="btn-save-preset" data-l10n-title="savePreset" title="保存为自定义语音预设">💾</button>
-                <button class="voice-preset-btn danger" id="btn-delete-preset" data-l10n-title="deletePreset" title="删除当前自定义预设" disabled>🗑</button>
+                <button class="voice-preset-btn danger" id="btn-delete-server-voice" data-l10n-title="deleteServerVoice" title="删除服务器端自定义语音" disabled>🗑</button>
             </div>
         </div>
 
@@ -853,6 +967,38 @@ enum VoxBoxHTML {
                 <input type="range" id="timesteps-slider" min="4" max="30" step="1" value="10">
                 <span class="setting-value" id="timesteps-value">10</span>
             </div>
+        </div>
+
+        <!-- Create Voice Section -->
+        <button class="advanced-toggle" id="create-voice-toggle">
+            <span data-l10n="createVoiceTitle">🎙 创建新语音</span>
+            <span class="chevron">▾</span>
+        </button>
+
+        <div class="advanced-panel create-voice-panel" id="create-voice-panel">
+            <div class="setting-row">
+                <span class="setting-label" data-l10n="voiceName">语音名称</span>
+                <input type="text" id="new-voice-name" class="create-voice-input" placeholder="如: my-voice" maxlength="60">
+            </div>
+            <div class="setting-row">
+                <span class="setting-label" data-l10n="refAudio">参考音频</span>
+                <button class="pick-audio-btn" id="btn-pick-audio" data-l10n="chooseFile">选择文件…</button>
+                <span class="audio-path-display" id="audio-path-display"></span>
+            </div>
+            <div class="setting-row">
+                <span class="setting-label" data-l10n="promptText">转录文本</span>
+                <textarea id="new-voice-text" class="create-voice-textarea" placeholder="可选：精确转录文本（用于高相似度克隆）"></textarea>
+            </div>
+            <div class="setting-row">
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-tertiary);cursor:pointer;">
+                    <input type="checkbox" id="new-voice-replace" style="width:14px;height:14px;">
+                    <span data-l10n="replaceIfExists">替换已存在的语音</span>
+                </label>
+            </div>
+            <button class="btn-create-voice" id="btn-create-voice">
+                <span id="btn-create-voice-text" data-l10n="createVoice">Create Voice</span>
+            </button>
+            <div class="create-voice-status idle" id="create-voice-status" data-l10n="createVoiceHint">选择参考音频文件，输入名称后点击创建</div>
         </div>
 
         <!-- Action Buttons -->
@@ -896,10 +1042,11 @@ enum VoxBoxHTML {
         loadFailed: IS_CHINESE ? '加载失败' : 'Failed to load voices',
         highSim: IS_CHINESE ? '高相似度' : 'High Sim',
         savePreset: IS_CHINESE ? '保存为自定义语音预设' : 'Save as custom voice preset',
-        deletePreset: IS_CHINESE ? '删除当前自定义预设' : 'Delete current custom preset',
+        deleteServerVoice: IS_CHINESE ? '删除服务器端自定义语音' : 'Delete server-side custom voice',
         presetNamePrompt: IS_CHINESE ? '请输入自定义预设名称：' : 'Enter custom preset name:',
         presetSaved: IS_CHINESE ? '自定义预设已保存' : 'Custom preset saved',
-        presetDeleted: IS_CHINESE ? '自定义预设已删除' : 'Custom preset deleted',
+        voiceDeleted: IS_CHINESE ? '自定义语音已删除' : 'Custom voice deleted',
+        deleteVoiceConfirm: IS_CHINESE ? '确定要永久删除该自定义语音吗？此操作不可撤销。' : 'Delete this custom voice permanently? This cannot be undone.',
         advancedSettings: IS_CHINESE ? '高级设置' : 'Advanced Settings',
         speed: IS_CHINESE ? '语速' : 'Speed',
         sampleRate: IS_CHINESE ? '采样率' : 'Sample Rate',
@@ -916,7 +1063,24 @@ enum VoxBoxHTML {
         replay: IS_CHINESE ? '重新播放' : 'Replay',
         generatedAudio: IS_CHINESE ? '生成的音频' : 'Generated Audio',
         toastSaved: IS_CHINESE ? '💾 音频已保存至 ' : '💾 Audio saved to ',
-        toastVoxBoxOutput: IS_CHINESE ? 'VoxBox Output 文件夹' : 'VoxBox Output folder'
+        toastVoxBoxOutput: IS_CHINESE ? 'VoxBox Output 文件夹' : 'VoxBox Output folder',
+        // Create Voice L10N
+        createVoiceTitle: IS_CHINESE ? '🎙 创建新语音' : '🎙 Create Voice',
+        voiceName: IS_CHINESE ? '语音名称' : 'Voice Name',
+        refAudio: IS_CHINESE ? '参考音频' : 'Reference Audio',
+        promptText: IS_CHINESE ? '转录文本' : 'Transcription',
+        chooseFile: IS_CHINESE ? '选择文件…' : 'Choose File…',
+        replaceIfExists: IS_CHINESE ? '替换已存在的语音' : 'Replace if exists',
+        createVoice: IS_CHINESE ? 'Create Voice' : 'Create Voice',
+        creatingVoice: IS_CHINESE ? '正在创建…' : 'Creating…',
+        voiceCreated: IS_CHINESE ? '✓ 语音已创建' : '✓ Voice created',
+        createVoiceHint: IS_CHINESE ? '选择参考音频文件，输入名称后点击创建' : 'Select a reference audio file, enter a name, and click Create',
+        noAudioFile: IS_CHINESE ? '请先选择参考音频文件' : 'Please select a reference audio file first',
+        noVoiceName: IS_CHINESE ? '请输入语音名称' : 'Please enter a voice name',
+        customVoiceBadge: IS_CHINESE ? '自定义' : 'custom',
+        // Dropdown separators
+        sepCustomVoices: IS_CHINESE ? '──── 自定义语音 ────' : '──── Custom Voices ────',
+        sepPresets: IS_CHINESE ? '──── 参数预设 ────' : '──── Parameter Presets ────'
     };
 
     function _(key) { return L10N[key] || key; }
@@ -943,6 +1107,7 @@ enum VoxBoxHTML {
     var API_BASE = 'http://127.0.0.1:' + SERVER_PORT;
     var SPEECH_ENDPOINT = API_BASE + '/v1/audio/speech';
     var VOICES_ENDPOINT = API_BASE + '/voices';
+    var CREATE_VOICE_ENDPOINT = API_BASE + '/v1/voices';
 
     // ── DOM refs ──
     var textInput = document.getElementById('text-input');
@@ -962,7 +1127,7 @@ enum VoxBoxHTML {
     var voiceModeSelect = document.getElementById('voice-mode-select');
     var voiceRefresh = document.getElementById('voice-refresh');
     var btnSavePreset = document.getElementById('btn-save-preset');
-    var btnDeletePreset = document.getElementById('btn-delete-preset');
+    var btnDeleteServerVoice = document.getElementById('btn-delete-server-voice');
     var btnGeneratePlay = document.getElementById('btn-generate-play');
     var btnGenerateSave = document.getElementById('btn-generate-save');
     var btnIconPlay = document.getElementById('btn-icon-play');
@@ -979,16 +1144,31 @@ enum VoxBoxHTML {
     var playerTimesInline = document.getElementById('player-times-inline');
     var btnReplay = document.getElementById('btn-replay');
 
+    // ── Create Voice DOM refs ──
+    var createVoiceToggle = document.getElementById('create-voice-toggle');
+    var createVoicePanel = document.getElementById('create-voice-panel');
+    var newVoiceNameInput = document.getElementById('new-voice-name');
+    var newVoiceTextInput = document.getElementById('new-voice-text');
+    var newVoiceReplaceCheckbox = document.getElementById('new-voice-replace');
+    var btnPickAudio = document.getElementById('btn-pick-audio');
+    var audioPathDisplay = document.getElementById('audio-path-display');
+    var btnCreateVoice = document.getElementById('btn-create-voice');
+    var btnCreateVoiceText = document.getElementById('btn-create-voice-text');
+    var createVoiceStatus = document.getElementById('create-voice-status');
+
     // ── State ──
     var isGenerating = false;
     var lastAudioBlob = null;
     var lastText = '';
     var availableVoices = [];
+    var serverCustomVoices = [];
     var playerSeeking = false;
     var currentBlobURL = null;
-    var customVoices = [];
-    var CUSTOM_VOICES_KEY = 'voxbox_custom_voices';
-    var _suppressVoiceChange = false;  // guard against re-entrant change events
+    var localStoragePresets = [];
+    var LOCAL_PRESETS_KEY = 'voxbox_custom_voices';
+    var _suppressVoiceChange = false;
+    var selectedAudioPath = '';
+    var isCreatingVoice = false;
 
     // ── Format time ──
     function formatTime(seconds) {
@@ -998,29 +1178,28 @@ enum VoxBoxHTML {
         return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
     }
 
-    // ── Custom Voice Presets (localStorage) ──
-    function loadCustomVoices() {
+    // ── LocalStorage Presets ──
+    function loadLocalPresets() {
         try {
-            var raw = localStorage.getItem(CUSTOM_VOICES_KEY);
-            customVoices = raw ? JSON.parse(raw) : [];
-            if (!Array.isArray(customVoices)) customVoices = [];
+            var raw = localStorage.getItem(LOCAL_PRESETS_KEY);
+            localStoragePresets = raw ? JSON.parse(raw) : [];
+            if (!Array.isArray(localStoragePresets)) localStoragePresets = [];
         } catch(e) {
-            customVoices = [];
+            localStoragePresets = [];
         }
     }
 
-    function saveCustomVoicesToStorage() {
+    function saveLocalPresetsToStorage() {
         try {
-            localStorage.setItem(CUSTOM_VOICES_KEY, JSON.stringify(customVoices));
+            localStorage.setItem(LOCAL_PRESETS_KEY, JSON.stringify(localStoragePresets));
         } catch(e) {
-            console.warn('[VoxBox] Failed to save custom voices:', e);
+            console.warn('[VoxBox] Failed to save presets:', e);
         }
     }
 
     function getCurrentSettings() {
         var voiceVal = voiceSelect.value;
-        // Strip custom prefix if present — save the resolved voice (or empty)
-        if (voiceVal && voiceVal.indexOf('__custom__') === 0) {
+        if (voiceVal && voiceVal.indexOf('__preset__') === 0) {
             voiceVal = '';
         }
         return {
@@ -1033,7 +1212,6 @@ enum VoxBoxHTML {
         };
     }
 
-    // Apply settings to UI without triggering re-entrant voice change
     function applySettings(settings) {
         if (!settings) return;
         _suppressVoiceChange = true;
@@ -1042,9 +1220,11 @@ enum VoxBoxHTML {
                 if (availableVoices.indexOf(settings.voice) >= 0) {
                     voiceSelect.value = settings.voice;
                     voiceSelect.setAttribute('data-is-custom', 'false');
+                    voiceSelect.setAttribute('data-is-server-custom', serverCustomVoices.indexOf(settings.voice) >= 0 ? 'true' : 'false');
                 } else {
                     voiceSelect.value = '';
                     voiceSelect.setAttribute('data-is-custom', 'false');
+                    voiceSelect.setAttribute('data-is-server-custom', 'false');
                 }
             }
             if (settings.voice_mode !== undefined) voiceModeSelect.value = settings.voice_mode;
@@ -1069,71 +1249,89 @@ enum VoxBoxHTML {
         }
     }
 
-    function isCustomVoiceSelected() {
-        return voiceSelect.getAttribute('data-is-custom') === 'true';
-    }
-
-    function getSelectedCustomVoiceIndex() {
-        if (!isCustomVoiceSelected()) return -1;
-        return parseInt(voiceSelect.getAttribute('data-custom-idx')) || 0;
+    function isServerCustomSelected() {
+        return voiceSelect.getAttribute('data-is-server-custom') === 'true';
     }
 
     function updateDeleteButton() {
-        btnDeletePreset.disabled = !isCustomVoiceSelected();
+        btnDeleteServerVoice.disabled = !isServerCustomSelected();
     }
 
-    // Rebuild voice dropdown: server presets + custom presets
+    // Rebuild voice dropdown with localized separators
     function refreshVoiceDropdown() {
         var sel = voiceSelect;
         var currentVal = sel.value;
-        var isCustom = sel.getAttribute('data-is-custom') === 'true';
-        var customIdx = isCustom ? parseInt(sel.getAttribute('data-custom-idx')) : -1;
+        var isPreset = sel.getAttribute('data-is-custom') === 'true';
+        var presetIdx = isPreset ? parseInt(sel.getAttribute('data-custom-idx')) : -1;
 
         _suppressVoiceChange = true;
         try {
             sel.innerHTML = '';
 
-            // Default option
             var defaultOpt = document.createElement('option');
             defaultOpt.value = '';
             defaultOpt.textContent = _('defaultVoice');
             sel.appendChild(defaultOpt);
 
-            // Server presets
+            // Server system voices
             availableVoices.forEach(function(name) {
+                if (serverCustomVoices.indexOf(name) >= 0) return;
                 var opt = document.createElement('option');
                 opt.value = name;
                 opt.textContent = name;
                 sel.appendChild(opt);
             });
 
-            // Separator + custom voices
-            if (customVoices.length > 0) {
-                var sep = document.createElement('option');
-                sep.value = '';
-                sep.textContent = '──────────';
-                sep.disabled = true;
-                sel.appendChild(sep);
+            // Server custom voices
+            if (serverCustomVoices.length > 0) {
+                var sep1 = document.createElement('option');
+                sep1.value = '';
+                sep1.textContent = _('sepCustomVoices');
+                sep1.disabled = true;
+                sel.appendChild(sep1);
 
-                customVoices.forEach(function(cv, idx) {
+                serverCustomVoices.forEach(function(name) {
                     var opt = document.createElement('option');
-                    opt.value = '__custom__' + idx;
-                    opt.textContent = '⭐ ' + cv.name;
+                    opt.value = name;
+                    opt.textContent = '⭐ ' + name + ' (' + _('customVoiceBadge') + ')';
+                    sel.appendChild(opt);
+                });
+            }
+
+            // LocalStorage presets
+            if (localStoragePresets.length > 0) {
+                var sep2 = document.createElement('option');
+                sep2.value = '';
+                sep2.textContent = _('sepPresets');
+                sep2.disabled = true;
+                sel.appendChild(sep2);
+
+                localStoragePresets.forEach(function(cv, idx) {
+                    var opt = document.createElement('option');
+                    opt.value = '__preset__' + idx;
+                    opt.textContent = '💾 ' + cv.name;
                     sel.appendChild(opt);
                 });
             }
 
             // Restore selection
-            if (customIdx >= 0 && customIdx < customVoices.length) {
-                sel.value = '__custom__' + customIdx;
+            if (presetIdx >= 0 && presetIdx < localStoragePresets.length) {
+                sel.value = '__preset__' + presetIdx;
                 sel.setAttribute('data-is-custom', 'true');
-                sel.setAttribute('data-custom-idx', String(customIdx));
+                sel.setAttribute('data-custom-idx', String(presetIdx));
+                sel.setAttribute('data-is-server-custom', 'false');
+            } else if (serverCustomVoices.indexOf(currentVal) >= 0) {
+                sel.value = currentVal;
+                sel.setAttribute('data-is-custom', 'false');
+                sel.setAttribute('data-is-server-custom', 'true');
             } else if (availableVoices.indexOf(currentVal) >= 0 || currentVal === '') {
                 sel.value = currentVal;
                 sel.setAttribute('data-is-custom', 'false');
+                sel.setAttribute('data-is-server-custom', 'false');
             } else {
                 sel.value = '';
                 sel.setAttribute('data-is-custom', 'false');
+                sel.setAttribute('data-is-server-custom', 'false');
             }
         } finally {
             _suppressVoiceChange = false;
@@ -1142,39 +1340,42 @@ enum VoxBoxHTML {
         updateDeleteButton();
     }
 
-    // Voice select change — only acts on user-initiated changes
+    // Voice select change
     voiceSelect.addEventListener('change', function() {
-        if (_suppressVoiceChange) return;  // programmatic change, skip
+        if (_suppressVoiceChange) return;
 
         var val = voiceSelect.value;
-        if (val && val.indexOf('__custom__') === 0) {
-            var idx = parseInt(val.substring('__custom__'.length));
+        if (val && val.indexOf('__preset__') === 0) {
+            var idx = parseInt(val.substring('__preset__'.length));
             voiceSelect.setAttribute('data-is-custom', 'true');
             voiceSelect.setAttribute('data-custom-idx', String(idx));
+            voiceSelect.setAttribute('data-is-server-custom', 'false');
 
-            if (idx >= 0 && idx < customVoices.length) {
-                var preset = customVoices[idx];
-                // applySettings will set voice dropdown (suppressed), restores sliders
+            if (idx >= 0 && idx < localStoragePresets.length) {
+                var preset = localStoragePresets[idx];
                 applySettings(preset);
-                // Re-affirm custom state after applySettings
                 voiceSelect.setAttribute('data-is-custom', 'true');
                 voiceSelect.setAttribute('data-custom-idx', String(idx));
+                voiceSelect.setAttribute('data-is-server-custom', 'false');
             }
+        } else if (val && serverCustomVoices.indexOf(val) >= 0) {
+            voiceSelect.setAttribute('data-is-custom', 'false');
+            voiceSelect.setAttribute('data-is-server-custom', 'true');
         } else {
             voiceSelect.setAttribute('data-is-custom', 'false');
-            voiceSelect.removeAttribute('data-custom-idx');
+            voiceSelect.setAttribute('data-is-server-custom', 'false');
         }
         updateDeleteButton();
     });
 
-    // Save custom preset
+    // Save localStorage preset
     btnSavePreset.addEventListener('click', function() {
         var name = prompt(_('presetNamePrompt'), '');
         if (!name || !name.trim()) return;
         name = name.trim();
 
         var settings = getCurrentSettings();
-        customVoices.push({
+        localStoragePresets.push({
             name: name,
             voice: settings.voice,
             voice_mode: settings.voice_mode,
@@ -1183,15 +1384,15 @@ enum VoxBoxHTML {
             cfg_value: settings.cfg_value,
             inference_timesteps: settings.inference_timesteps
         });
-        saveCustomVoicesToStorage();
+        saveLocalPresetsToStorage();
         refreshVoiceDropdown();
 
-        // Select the new custom voice (suppress change to avoid double-fire)
         _suppressVoiceChange = true;
         try {
-            voiceSelect.value = '__custom__' + (customVoices.length - 1);
+            voiceSelect.value = '__preset__' + (localStoragePresets.length - 1);
             voiceSelect.setAttribute('data-is-custom', 'true');
-            voiceSelect.setAttribute('data-custom-idx', String(customVoices.length - 1));
+            voiceSelect.setAttribute('data-custom-idx', String(localStoragePresets.length - 1));
+            voiceSelect.setAttribute('data-is-server-custom', 'false');
         } finally {
             _suppressVoiceChange = false;
         }
@@ -1200,19 +1401,162 @@ enum VoxBoxHTML {
         showToast(_('presetSaved') + ': ' + name);
     });
 
-    // Delete custom preset
-    btnDeletePreset.addEventListener('click', function() {
-        var idx = getSelectedCustomVoiceIndex();
-        if (idx < 0 || idx >= customVoices.length) return;
+    // Delete server-side custom voice
+    btnDeleteServerVoice.addEventListener('click', function() {
+        var voiceName = voiceSelect.value;
+        if (!voiceName || serverCustomVoices.indexOf(voiceName) < 0) return;
 
-        if (!confirm(IS_CHINESE ? '确定要删除该自定义语音预设吗？' : 'Delete this custom voice preset?')) return;
+        if (!confirm(_('deleteVoiceConfirm'))) return;
 
-        var name = customVoices[idx].name;
-        customVoices.splice(idx, 1);
-        saveCustomVoicesToStorage();
-        refreshVoiceDropdown();
-        updateDeleteButton();
-        showToast(_('presetDeleted') + ': ' + name);
+        btnDeleteServerVoice.disabled = true;
+        var origText = btnDeleteServerVoice.textContent;
+        btnDeleteServerVoice.textContent = '…';
+
+        fetch(CREATE_VOICE_ENDPOINT + '/' + encodeURIComponent(voiceName), {
+            method: 'DELETE'
+        })
+        .then(function(response) {
+            if (!response.ok) {
+                return response.json().then(function(err) {
+                    throw new Error(err.detail || 'HTTP ' + response.status);
+                });
+            }
+            return response.json();
+        })
+        .then(function() {
+            showToast(_('voiceDeleted') + ': ' + voiceName);
+            loadVoices();
+        })
+        .catch(function(err) {
+            showToast(_('errorPrefix') + err.message);
+            console.error('[VoxBox] Delete voice error:', err);
+        })
+        .finally(function() {
+            btnDeleteServerVoice.textContent = origText;
+            updateDeleteButton();
+        });
+    });
+
+    // ── Create Voice: File Picker Bridge ──
+    btnPickAudio.addEventListener('click', function() {
+        if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.voxbox) {
+            window.webkit.messageHandlers.voxbox.postMessage({type: 'pickAudioFile'});
+        } else {
+            showToast('File picker requires native app bridge');
+        }
+    });
+
+    window.__voxboxOnAudioFilePicked = function(filePath) {
+        selectedAudioPath = filePath;
+        if (filePath) {
+            var parts = filePath.split('/');
+            audioPathDisplay.textContent = '📁 ' + (parts[parts.length - 1] || filePath);
+            audioPathDisplay.style.color = 'var(--text-secondary)';
+        } else {
+            selectedAudioPath = '';
+            audioPathDisplay.textContent = '';
+        }
+        updateCreateVoiceButton();
+    };
+
+    function updateCreateVoiceButton() {
+        var hasName = newVoiceNameInput.value.trim().length > 0;
+        var hasAudio = selectedAudioPath.length > 0;
+        btnCreateVoice.disabled = !hasName || !hasAudio || isCreatingVoice;
+    }
+
+    newVoiceNameInput.addEventListener('input', updateCreateVoiceButton);
+
+    // Create Voice: call server API
+    btnCreateVoice.addEventListener('click', function() {
+        var name = newVoiceNameInput.value.trim();
+        if (!name) {
+            showToast(_('noVoiceName'));
+            return;
+        }
+        if (!selectedAudioPath) {
+            showToast(_('noAudioFile'));
+            return;
+        }
+
+        isCreatingVoice = true;
+        btnCreateVoice.disabled = true;
+        btnCreateVoiceText.textContent = _('creatingVoice');
+        createVoiceStatus.className = 'create-voice-status creating';
+        createVoiceStatus.textContent = IS_CHINESE ? '正在创建语音…' : 'Creating voice…';
+
+        var body = {
+            voice_name: name,
+            reference_wav_path: selectedAudioPath
+        };
+
+        var promptText = newVoiceTextInput.value.trim();
+        if (promptText) {
+            body.prompt_text = promptText;
+        }
+
+        if (newVoiceReplaceCheckbox.checked) {
+            body.replace = true;
+        }
+
+        fetch(CREATE_VOICE_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        })
+        .then(function(response) {
+            if (!response.ok) {
+                return response.json().then(function(err) {
+                    throw new Error(err.detail || 'HTTP ' + response.status);
+                });
+            }
+            return response.json();
+        })
+        .then(function(result) {
+            createVoiceStatus.className = 'create-voice-status success';
+            createVoiceStatus.textContent = _('voiceCreated') + ': ' + name;
+            showToast(_('voiceCreated') + ': ' + name);
+
+            newVoiceNameInput.value = '';
+            newVoiceTextInput.value = '';
+            selectedAudioPath = '';
+            audioPathDisplay.textContent = '';
+            newVoiceReplaceCheckbox.checked = false;
+
+            loadVoices().then(function() {
+                _suppressVoiceChange = true;
+                try {
+                    voiceSelect.value = name;
+                    voiceSelect.setAttribute('data-is-custom', 'false');
+                    voiceSelect.setAttribute('data-is-server-custom', 'true');
+                } finally {
+                    _suppressVoiceChange = false;
+                }
+                updateDeleteButton();
+            });
+
+            setTimeout(function() {
+                createVoicePanel.classList.remove('open');
+                createVoiceToggle.classList.remove('open');
+            }, 1500);
+        })
+        .catch(function(err) {
+            createVoiceStatus.className = 'create-voice-status error';
+            createVoiceStatus.textContent = _('errorPrefix') + err.message;
+            console.error('[VoxBox] Create voice error:', err);
+        })
+        .finally(function() {
+            isCreatingVoice = false;
+            btnCreateVoice.disabled = false;
+            btnCreateVoiceText.textContent = _('createVoice');
+            updateCreateVoiceButton();
+        });
+    });
+
+    // Create Voice toggle
+    createVoiceToggle.addEventListener('click', function() {
+        var isOpen = createVoicePanel.classList.toggle('open');
+        createVoiceToggle.classList.toggle('open', isOpen);
     });
 
     // ── Load available voices ──
@@ -1220,13 +1564,15 @@ enum VoxBoxHTML {
         voiceSelect.innerHTML = '<option value="">' + _('loadingVoices') + '</option>';
         voiceSelect.disabled = true;
 
-        fetch(VOICES_ENDPOINT)
+        return fetch(VOICES_ENDPOINT)
             .then(function(response) {
                 if (!response.ok) throw new Error('HTTP ' + response.status);
                 return response.json();
             })
             .then(function(data) {
                 availableVoices = [];
+                serverCustomVoices = [];
+
                 if (data && data.voices && Array.isArray(data.voices)) {
                     data.voices.forEach(function(v) {
                         var name = typeof v === 'string' ? v : (v.name || v.voice_name || '');
@@ -1235,9 +1581,14 @@ enum VoxBoxHTML {
                         }
                     });
                 }
+
+                if (data && data.custom_voices && Array.isArray(data.custom_voices)) {
+                    serverCustomVoices = data.custom_voices;
+                }
+
                 voiceSelect.disabled = false;
                 refreshVoiceDropdown();
-                console.log('[VoxBox] Loaded ' + availableVoices.length + ' voices, ' + customVoices.length + ' custom');
+                console.log('[VoxBox] Loaded ' + availableVoices.length + ' voices (' + serverCustomVoices.length + ' custom)');
             })
             .catch(function(err) {
                 voiceSelect.disabled = false;
@@ -1246,7 +1597,9 @@ enum VoxBoxHTML {
             });
     }
 
-    voiceRefresh.addEventListener('click', loadVoices);
+    voiceRefresh.addEventListener('click', function() {
+        loadVoices();
+    });
 
     // ── Character count ──
     function updateCharCount() {
@@ -1440,34 +1793,29 @@ enum VoxBoxHTML {
     });
 
     // ── Player: Instant Replay ──
-    // Rebuilds blob URL and resets playback position
     btnReplay.addEventListener('click', function() {
         if (!lastAudioBlob) return;
 
-        // Create fresh blob URL (revokes old one)
         var url = createPlaybackURL(lastAudioBlob);
         audioPlayer.src = url;
-        audioPlayer.load();  // ensure browser parses the new source
+        audioPlayer.load();
 
-        // Reset UI
         audioPlayer.currentTime = 0;
         playerProgress.value = 0;
         playerTimesInline.textContent = '00:00 / ' + formatTime(audioPlayer.duration || 0);
         btnPlayPause.textContent = '⏸';
 
-        // Start playback — with fallback if src not ready yet
         var playPromise = audioPlayer.play();
         if (playPromise !== undefined) {
             playPromise.catch(function(e) {
                 console.warn('[VoxBox] Replay play() rejected, waiting for canplay:', e.message);
-                // Fallback: wait until browser has enough data
                 audioPlayer.oncanplay = function() {
                     audioPlayer.play().catch(function(e2) {
                         console.warn('[VoxBox] Replay fallback also failed:', e2.message);
                     });
                     audioPlayer.oncanplay = null;
                 };
-                audioPlayer.load();  // re-trigger load
+                audioPlayer.load();
             });
         }
     });
@@ -1481,8 +1829,7 @@ enum VoxBoxHTML {
         var voice = voiceSelect.value;
         var voiceMode = voiceModeSelect.value;
 
-        // Strip custom prefix if present
-        if (voice && voice.indexOf('__custom__') === 0) {
+        if (voice && voice.indexOf('__preset__') === 0) {
             voice = '';
         }
 
@@ -1587,7 +1934,7 @@ enum VoxBoxHTML {
     applyL10n();
     updateCharCount();
     textInput.focus();
-    loadCustomVoices();
+    loadLocalPresets();
     loadVoices();
 
     console.log('[VoxBox] Native frontend ready · Port ' + SERVER_PORT + ' · ' + (IS_CHINESE ? '中文' : 'English'));
@@ -1849,13 +2196,16 @@ struct WebView: NSViewRepresentable {
         var onSaveHistoryItem: ((Int) -> Void)?
         var onOpenRecordingsFolder: (() -> Void)?
         var isLoading = false
+        weak var webView: WKWebView?
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
             isLoading = true
+            self.webView = webView
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             isLoading = false
+            self.webView = webView
             print("✅ WebView loaded: local frontend")
         }
 
@@ -1881,20 +2231,31 @@ struct WebView: NSViewRepresentable {
             case "voxbox":
                 guard let body = message.body as? [String: Any],
                       let type = body["type"] as? String else { return }
-                if type == "log", let msg = body["message"] as? String {
-                    print("🌐 [WebView] \(msg)")
-                } else if type == "saveAudio" {
+                switch type {
+                case "log":
+                    if let msg = body["message"] as? String {
+                        print("🌐 [WebView] \(msg)")
+                    }
+                case "saveAudio":
                     DispatchQueue.main.async { [weak self] in
                         self?.onSaveRequested?()
                     }
-                } else if type == "saveAudioAtIndex", let idx = body["index"] as? Int {
-                    DispatchQueue.main.async { [weak self] in
-                        self?.onSaveHistoryItem?(idx)
+                case "saveAudioAtIndex":
+                    if let idx = body["index"] as? Int {
+                        DispatchQueue.main.async { [weak self] in
+                            self?.onSaveHistoryItem?(idx)
+                        }
                     }
-                } else if type == "openRecordingsFolder" {
+                case "openRecordingsFolder":
                     DispatchQueue.main.async { [weak self] in
                         self?.onOpenRecordingsFolder?()
                     }
+                case "pickAudioFile":
+                    DispatchQueue.main.async { [weak self] in
+                        self?.handlePickAudioFile()
+                    }
+                default:
+                    break
                 }
 
             case "audioCaptured":
@@ -1912,6 +2273,48 @@ struct WebView: NSViewRepresentable {
 
             default:
                 break
+            }
+        }
+
+        // MARK: - File Picker for Voice Creation
+
+        private func handlePickAudioFile() {
+            let panel = NSOpenPanel()
+            panel.title = "Select Reference Audio"
+            panel.message = "Choose a WAV, MP3, or FLAC file as voice reference"
+            panel.canChooseFiles = true
+            panel.canChooseDirectories = false
+            panel.allowsMultipleSelection = false
+            panel.allowedContentTypes = [.wav, .mp3, .flac, UTType(filenameExtension: "ogg") ?? .audio, UTType(filenameExtension: "aac") ?? .audio]
+            panel.canCreateDirectories = false
+            panel.level = .modalPanel
+
+            panel.begin { [weak self] response in
+                guard response == .OK, let url = panel.url else {
+                    self?.sendAudioPathToJS("")
+                    return
+                }
+                let path = url.path
+                print("📁 [VoxBox] Audio file picked: \(path)")
+                self?.sendAudioPathToJS(path)
+            }
+        }
+
+        private func sendAudioPathToJS(_ path: String) {
+            let escaped = path
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "'", with: "\\'")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+                .replacingOccurrences(of: "\n", with: "\\n")
+                .replacingOccurrences(of: "\r", with: "\\r")
+
+            let js = "if(window.__voxboxOnAudioFilePicked) window.__voxboxOnAudioFilePicked('\(escaped)');"
+            DispatchQueue.main.async { [weak self] in
+                self?.webView?.evaluateJavaScript(js) { _, error in
+                    if let error = error {
+                        print("⚠️ [VoxBox] Failed to send audio path to JS: \(error.localizedDescription)")
+                    }
+                }
             }
         }
     }
