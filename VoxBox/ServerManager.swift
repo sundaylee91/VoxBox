@@ -9,6 +9,7 @@
 import Foundation
 import AppKit
 import UniformTypeIdentifiers
+import Darwin
 
 // MARK: - Audio Format
 
@@ -832,6 +833,12 @@ final class ServerManager: ObservableObject {
         return try await installUv()
     }
 
+    /// Use POSIX chmod to set +x on a file (works inside sandbox).
+    private static func chmodX(_ path: String) -> Bool {
+        let result = Darwin.chmod(path, 0o755)
+        return result == 0
+    }
+
     /// Search for an executable uv binary.
     /// If a candidate exists but lacks +x, attempt chmod +x before giving up.
     private static func findUvExecutable() -> String? {
@@ -847,14 +854,10 @@ final class ServerManager: ObservableObject {
             if FileManager.default.isExecutableFile(atPath: path) {
                 return path
             }
-            // File exists but not executable → try chmod +x
+            // File exists but not executable → try POSIX chmod +x
             if FileManager.default.fileExists(atPath: path) {
-                let chmod = Process()
-                chmod.executableURL = URL(fileURLWithPath: "/bin/chmod")
-                chmod.arguments = ["+x", path]
-                try? chmod.run()
-                chmod.waitUntilExit()
-                if FileManager.default.isExecutableFile(atPath: path) {
+                if chmodX(path),
+                   FileManager.default.isExecutableFile(atPath: path) {
                     return path
                 }
             }
@@ -893,7 +896,7 @@ final class ServerManager: ObservableObject {
     }
 
     /// Download and install uv via the official install script.
-    /// Runs on a background thread; chmod +x after install; retries up to 6 times.
+    /// Runs on a background thread; uses POSIX chmod +x after install; retries up to 6 times.
     private func installUv() async throws -> String {
         try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -954,21 +957,29 @@ final class ServerManager: ObservableObject {
                         }
                     }
 
-                    // ── chmod +x the installed binaries ──
-                    // This is the CRITICAL fix: uv install script does NOT set +x.
-                    for binary in ["uv", "uvx"] {
-                        let binaryPath = "\(installDir)/\(binary)"
+                    // ── POSIX chmod +x the installed binaries ──
+                    // CRITICAL: uv install script does NOT set +x.
+                    // Using Darwin.chmod() syscall because Process + /bin/chmod
+                    // is silently denied inside App Sandbox.
+                    let uvBinaryPath = "\(installDir)/uv"
+                    let uvxBinaryPath = "\(installDir)/uvx"
+
+                    var chmodOk = true
+                    for binaryPath in [uvBinaryPath, uvxBinaryPath] {
                         if FileManager.default.fileExists(atPath: binaryPath) {
-                            let chmod = Process()
-                            chmod.executableURL = URL(fileURLWithPath: "/bin/chmod")
-                            chmod.arguments = ["+x", binaryPath]
-                            try? chmod.run()
-                            chmod.waitUntilExit()
+                            if !ServerManager.chmodX(binaryPath) {
+                                chmodOk = false
+                                Task { @MainActor in
+                                    self.appendLog("⚠️ chmod +x failed (errno=\(errno)) for \(binaryPath)")
+                                }
+                            }
                         }
+                    }
+                    if chmodOk {
+                        Task { @MainActor in self.appendLog("🔧 chmod +x applied to uv binaries") }
                     }
 
                     // ── Retry loop: wait for file + execute permission ──
-                    let uvBinaryPath = "\(installDir)/uv"
                     for i in 1...6 {
                         if FileManager.default.isExecutableFile(atPath: uvBinaryPath) {
                             continuation.resume(returning: uvBinaryPath)
