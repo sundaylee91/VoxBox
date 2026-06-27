@@ -25,6 +25,8 @@ class ServerManager: ObservableObject {
     private let healthCheckTimeout: TimeInterval = 300.0
     private let healthCheckPath = "/docs"
     
+    // MARK: - Python Detection
+    
     func findPython() -> String? {
         let candidates = [
             "/opt/homebrew/bin/python3.12", "/opt/homebrew/bin/python3.11", "/opt/homebrew/bin/python3.10",
@@ -64,6 +66,8 @@ class ServerManager: ObservableObject {
         return nil
     }
     
+    // MARK: - Package Installation
+    
     func ensurePackageInstalled(pythonPath: String) -> Bool {
         log("📦 Checking voxcpmane2 installation…")
         let checkProcess = Process()
@@ -87,6 +91,8 @@ class ServerManager: ObservableObject {
             else { log("❌ pip install failed"); return false }
         } catch { log("❌ pip install error: \(error)"); return false }
     }
+    
+    // MARK: - Server Lifecycle
     
     func start() {
         guard status == .stopped || status == .error("") else { return }
@@ -146,21 +152,51 @@ class ServerManager: ObservableObject {
         }
     }
     
+    // MARK: - Graceful Shutdown (with force-kill fallback)
+    
+    /// Gracefully stops the server: SIGTERM → wait 5s → SIGINT → wait 3s → SIGKILL
     func stop() {
         log("🛑 Stopping server…")
-        healthTimer?.invalidate(); healthTimer = nil
-        guard let process = process, process.isRunning else { status = .stopped; return }
-        process.terminate()
+        healthTimer?.invalidate()
+        healthTimer = nil
+        
+        guard let process = process, process.isRunning else {
+            status = .stopped
+            return
+        }
+        
+        let pid = process.processIdentifier
+        log("📤 Sending SIGTERM to PID \(pid)…")
+        process.terminate()  // SIGTERM
+        
+        // After 5 seconds, if still running, escalate to SIGINT (interrupt)
         DispatchQueue.global().asyncAfter(deadline: .now() + 5) { [weak self] in
             guard let self = self, let proc = self.process, proc.isRunning else { return }
-            proc.interrupt()
-            DispatchQueue.global().asyncAfter(deadline: .now() + 3) { if proc.isRunning { proc.forceTerminate() } }
+            log("⏳ Process still alive, sending SIGINT (interrupt)…")
+            proc.interrupt()  // SIGINT
+            
+            // After another 3 seconds, if still running, force-kill with SIGKILL
+            DispatchQueue.global().asyncAfter(deadline: .now() + 3) { [weak self] in
+                guard let self = self, let proc = self.process, proc.isRunning else { return }
+                let stubbornPid = proc.processIdentifier
+                log("💀 Force-killing PID \(stubbornPid) with SIGKILL…")
+                Darwin.kill(stubbornPid, SIGKILL)
+            }
         }
+        
         self.process = nil
         status = .stopped
+        log("✅ Server stopped")
     }
     
-    func restart() { stop(); DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.start() } }
+    func restart() {
+        stop()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            self?.start()
+        }
+    }
+    
+    // MARK: - Health Check
     
     private func startHealthCheck() {
         let startTime = Date()
@@ -188,6 +224,8 @@ class ServerManager: ObservableObject {
         }.resume()
     }
     
+    // MARK: - Output Monitoring
+    
     private func setupOutputMonitoring(outputPipe: Pipe) {
         outputPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             guard let self = self, let output = String(data: handle.availableData, encoding: .utf8), !output.isEmpty else { return }
@@ -211,6 +249,8 @@ class ServerManager: ObservableObject {
         }
     }
     
+    // MARK: - Port Utilities
+    
     private func findAvailablePort(starting port: Int) -> Int {
         var port = max(port, 1024)
         for _ in 0..<100 { if isPortAvailable(port: port) { return port }; port += 1 }
@@ -232,6 +272,8 @@ class ServerManager: ObservableObject {
         } == 0
     }
     
+    // MARK: - Logging
+    
     private func log(_ message: String) {
         let timestamp = ISO8601DateFormatter().string(from: Date())
         let line = "[\(timestamp)] \(message)"
@@ -241,6 +283,8 @@ class ServerManager: ObservableObject {
             self?.logOutput = String(self?.outputBuffer.suffix(10000) ?? "")
         }
     }
+    
+    // MARK: - Convenience
     
     func openInBrowser() {
         if let url = URL(string: "http://127.0.0.1:\(port)") { NSWorkspace.shared.open(url) }
