@@ -90,7 +90,6 @@ final class ServerManager: ObservableObject {
     @Published var outputFolderPath: String {
         didSet {
             UserDefaults.standard.set(outputFolderPath, forKey: "VoxBox.outputFolderPath")
-            // Ensure the folder exists when changed
             try? FileManager.default.createDirectory(at: outputFolder, withIntermediateDirectories: true)
         }
     }
@@ -102,7 +101,6 @@ final class ServerManager: ObservableObject {
            FileManager.default.fileExists(atPath: outputFolderPath) {
             return url
         }
-        // Default: ~/VoxBox Output
         return FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("VoxBox Output")
     }
@@ -116,7 +114,7 @@ final class ServerManager: ObservableObject {
     private var healthCheckTask: Task<Void, Never>?
 
     private let appSupportDir: URL
-    private let uvPath: String
+    private let cachedUvPath: String
     private let isM1Series: Bool
     private let isAppleSilicon: Bool
 
@@ -135,7 +133,7 @@ final class ServerManager: ObservableObject {
         ).first!.appendingPathComponent("VoxBox")
 
         self.appSupportDir = base
-        self.uvPath = ServerManager.findUv()
+        self.cachedUvPath = ServerManager.findUv()
         self.isAppleSilicon = ServerManager.isAppleSiliconMac()
         self.isM1Series = ServerManager.isM1Series()
 
@@ -148,7 +146,7 @@ final class ServerManager: ObservableObject {
             self.outputFolderPath = ""
         }
 
-        // Restore saved format preference (must be before any self usage)
+        // Restore saved format preference
         if let saved = UserDefaults.standard.string(forKey: "VoxBox.preferredFormat"),
            let fmt = AudioFormat(rawValue: saved) {
             self.preferredFormat = fmt
@@ -156,7 +154,6 @@ final class ServerManager: ObservableObject {
             self.preferredFormat = .wav
         }
 
-        // Now all stored properties are initialized — safe to use self
         // Ensure output folder exists
         try? FileManager.default.createDirectory(at: outputFolder, withIntermediateDirectories: true)
 
@@ -255,7 +252,6 @@ final class ServerManager: ObservableObject {
 
     // MARK: - Audio Capture
 
-    /// Called by WebView when audio is captured. Adds to history, auto-saves, and updates lastAudio.
     func captureAudio(data: Data, text: String) {
         lastAudioData = data
         lastAudioText = text
@@ -263,12 +259,10 @@ final class ServerManager: ObservableObject {
         let clip = AudioClip(data: data, text: text, timestamp: Date())
         audioHistory.append(clip)
 
-        // Trim to max
         while audioHistory.count > maxHistoryCount {
             audioHistory.removeFirst()
         }
 
-        // Auto-save to output folder
         autoSave(audioData: data, text: text)
 
         appendLog("🎵 Audio captured: \(data.count) bytes, text: \"\(text.prefix(40))\" (history: \(audioHistory.count))")
@@ -276,12 +270,10 @@ final class ServerManager: ObservableObject {
 
     // MARK: - Output Folder
 
-    /// Open the output folder in Finder.
     func openRecordingsFolder() {
         NSWorkspace.shared.open(outputFolder)
     }
 
-    /// Let the user choose a custom output folder.
     func chooseOutputFolder() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -295,24 +287,20 @@ final class ServerManager: ObservableObject {
         }
     }
 
-    /// Reset output folder to default.
     func resetOutputFolder() {
         outputFolderPath = ""
-        // Re-create default
         try? FileManager.default.createDirectory(at: outputFolder, withIntermediateDirectories: true)
         appendLog("📂 Output folder reset to default: \(outputFolder.path)")
     }
 
     // MARK: - Auto-save
 
-    /// Auto-save audio data to the output folder in the preferred format.
     private func autoSave(audioData: Data, text: String) {
         let folder = outputFolder
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
 
         let fmt = preferredFormat
 
-        // Sanitize filename from text
         var name = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if !name.isEmpty {
             name = name
@@ -331,7 +319,6 @@ final class ServerManager: ObservableObject {
         let filename = "\(timestamp)_\(name).\(fmt.fileExtension)"
         let fileURL = folder.appendingPathComponent(filename)
 
-        // Convert to MP3 if needed and available
         let outputData: Data
         if fmt == .mp3 && mp3Available {
             do {
@@ -377,16 +364,13 @@ final class ServerManager: ObservableObject {
         return "\(name).\(format.fileExtension)"
     }
 
-    /// Save the most recent audio clip.
     func saveAudio(format: AudioFormat? = nil) {
         saveAudio(historyIndex: nil, format: format)
     }
 
-    /// Save audio at a specific history index (0 = oldest). If nil, saves the latest.
     func saveAudio(historyIndex: Int?, format: AudioFormat? = nil) {
         let fmt = format ?? preferredFormat
 
-        // Resolve which clip to save
         let clip: AudioClip?
         if let idx = historyIndex, idx >= 0, idx < audioHistory.count {
             clip = audioHistory[idx]
@@ -405,7 +389,6 @@ final class ServerManager: ObservableObject {
             return
         }
 
-        // If MP3 requested but not available, fall back to WAV
         let effectiveFormat: AudioFormat
         if fmt == .mp3 && !mp3Available {
             effectiveFormat = .wav
@@ -662,50 +645,29 @@ final class ServerManager: ObservableObject {
         return nil
     }
 
-    // MARK: - Start Sequence
+    // MARK: - Start Sequence (redesigned)
 
+    /// Single entry point for the server startup sequence.
+    /// Flow: ensure uv → find Python → install voxcpmane2 → find port → launch server → health check.
     private func performStart() async {
-        // Resolve uv: use cached path if available (same as original logic),
-        // otherwise try to install. Re-validate that the file exists at runtime.
+        // ── Step 1: Ensure uv is available and executable ──
         let uv: String
-        if !uvPath.isEmpty,
-           FileManager.default.isExecutableFile(atPath: uvPath) {
-            uv = uvPath
-            appendLog("✅ Found uv at \(uv)")
-        } else if !uvPath.isEmpty {
-            appendLog("⚠️ Cached uv path exists but is not executable: \(uvPath) — will search/install")
-            let found = ServerManager.findUv()
-            if !found.isEmpty,
-               FileManager.default.isExecutableFile(atPath: found) {
-                uv = found
-                appendLog("✅ Found working uv at \(uv)")
-            } else {
-                appendLog("📦 Installing uv package manager…")
-                do {
-                    uv = try await installUv()
-                    appendLog("✅ uv installed at \(uv)")
-                } catch {
-                    setError("Failed to install uv: \(error.localizedDescription)")
-                    return
-                }
-            }
-        } else {
-            appendLog("📦 Installing uv package manager…")
-            do {
-                uv = try await installUv()
-                appendLog("✅ uv installed at \(uv)")
-            } catch {
-                setError("Failed to install uv: \(error.localizedDescription)")
-                return
-            }
+        do {
+            uv = try await ensureUv()
+        } catch {
+            setError("Failed to setup uv: \(error.localizedDescription)")
+            return
         }
+        appendLog("✅ uv ready: \(uv)")
 
+        // ── Step 2: Find Python 3.10–3.12 ──
         guard let pythonPath = ServerManager.findSystemPython() else {
             setError("Python >=3.10,<3.13 not found. Install via Homebrew: brew install python@3.12")
             return
         }
         appendLog("✅ Found \(pythonPath)")
 
+        // ── Step 3: Install voxcpmane2 via uv tool install ──
         let installArgs: [String]
         if isM1Series {
             appendLog("🍎 M1-series: installing voxcpmane2==0.1.3b1 for --split-base-lm")
@@ -730,7 +692,7 @@ final class ServerManager: ObservableObject {
             let output = try await runAsync(uv, args: installArgs)
             appendLog(output)
         } catch {
-            // If uv failed because the file disappeared, try reinstalling once
+            // If uv binary disappeared (sandbox quirk), try reinstalling once
             let nsErr = error as NSError
             if nsErr.domain == "NSCocoaErrorDomain" && nsErr.code == 4 {
                 appendLog("⚠️ uv binary disappeared — attempting reinstall…")
@@ -749,6 +711,7 @@ final class ServerManager: ObservableObject {
             }
         }
 
+        // ── Step 4: Verify voxcpmane2-server binary ──
         let serverBinary = "\(NSHomeDirectory())/.local/bin/voxcpmane2-server"
         guard FileManager.default.fileExists(atPath: serverBinary) else {
             setError("voxcpmane2-server not found at \(serverBinary)")
@@ -756,12 +719,14 @@ final class ServerManager: ObservableObject {
         }
         appendLog("✅ voxcpmane2-server: \(serverBinary)")
 
+        // ── Step 5: Find available port ──
         guard let port = findAvailablePort() else {
             setError("No available port found.")
             return
         }
         appendLog("🔌 Using port \(port)")
 
+        // ── Step 6: Launch server process ──
         var serverArgs = [
             "--host", "127.0.0.1",
             "--port", "\(port)",
@@ -843,6 +808,208 @@ final class ServerManager: ObservableObject {
             }
         } catch {
             setError(error.localizedDescription)
+        }
+    }
+
+    // MARK: - UV Management (redesigned — single source of truth)
+
+    /// Returns a guaranteed-executable uv path.
+    /// Tries cached path → system search → fresh install.
+    private func ensureUv() async throws -> String {
+        // 1. Check cached path (must be executable, not just exist)
+        if !cachedUvPath.isEmpty,
+           FileManager.default.isExecutableFile(atPath: cachedUvPath) {
+            return cachedUvPath
+        }
+
+        // 2. Search system with executable check + auto chmod
+        if let found = ServerManager.findUvExecutable() {
+            return found
+        }
+
+        // 3. Install fresh (includes chmod +x and retry)
+        appendLog("📦 Installing uv package manager…")
+        return try await installUv()
+    }
+
+    /// Search for an executable uv binary.
+    /// If a candidate exists but lacks +x, attempt chmod +x before giving up.
+    private static func findUvExecutable() -> String? {
+        let candidates = [
+            "\(NSHomeDirectory())/.local/bin/uv",
+            "/opt/homebrew/bin/uv",
+            "/usr/local/bin/uv",
+            "\(NSHomeDirectory())/.cargo/bin/uv",
+        ]
+
+        for path in candidates {
+            // Fast path: already executable
+            if FileManager.default.isExecutableFile(atPath: path) {
+                return path
+            }
+            // File exists but not executable → try chmod +x
+            if FileManager.default.fileExists(atPath: path) {
+                let chmod = Process()
+                chmod.executableURL = URL(fileURLWithPath: "/bin/chmod")
+                chmod.arguments = ["+x", path]
+                try? chmod.run()
+                chmod.waitUntilExit()
+                if FileManager.default.isExecutableFile(atPath: path) {
+                    return path
+                }
+            }
+        }
+
+        // Fallback: use `which uv`
+        if let result = try? runSync("/bin/sh", args: ["-c", "command -v uv 2>/dev/null"]),
+           let p = result.trimmingCharacters(in: .whitespacesAndNewlines),
+           !p.isEmpty,
+           p.hasPrefix("/"),
+           FileManager.default.isExecutableFile(atPath: p) {
+            return p
+        }
+
+        return nil
+    }
+
+    /// Legacy findUv — used in init() to cache a path early.
+    /// Now also tries chmod +x on existing-but-not-executable files.
+    private static func findUv() -> String {
+        if let found = findUvExecutable() {
+            return found
+        }
+        // Fallback: return path even if not (yet) executable — it may become executable later
+        let candidates = [
+            "\(NSHomeDirectory())/.local/bin/uv",
+            "/opt/homebrew/bin/uv",
+            "/usr/local/bin/uv",
+            "\(NSHomeDirectory())/.cargo/bin/uv",
+        ]
+        for path in candidates {
+            if FileManager.default.fileExists(atPath: path) {
+                return path
+            }
+        }
+        return ""
+    }
+
+    /// Download and install uv via the official install script.
+    /// Runs on a background thread; chmod +x after install; retries up to 6 times.
+    private func installUv() async throws -> String {
+        try await withCheckedThrowingContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                guard let self = self else {
+                    continuation.resume(throwing: ServerError.uvInstallFailed("self deallocated"))
+                    return
+                }
+
+                do {
+                    let scriptURL = "https://astral.sh/uv/install.sh"
+                    let install = Process()
+                    install.executableURL = URL(fileURLWithPath: "/bin/bash")
+                    install.arguments = ["-c", "curl -LsSf \(scriptURL) | sh"]
+
+                    // Inherit environment; ensure common bin dirs are in PATH
+                    var env = ProcessInfo.processInfo.environment
+                    var path = env["PATH"] ?? "/usr/bin:/bin"
+                    for add in [
+                        "\(NSHomeDirectory())/.local/bin",
+                        "/opt/homebrew/bin",
+                        "\(NSHomeDirectory())/.cargo/bin",
+                    ] {
+                        if !path.contains(add) {
+                            path = "\(add):\(path)"
+                        }
+                    }
+                    env["PATH"] = path
+                    install.environment = env
+
+                    let pipe = Pipe()
+                    install.standardOutput = pipe
+                    install.standardError = pipe
+
+                    try install.run()
+                    install.waitUntilExit()
+
+                    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                    let output = String(data: data, encoding: .utf8) ?? ""
+
+                    Task { @MainActor in self.appendLog(output) }
+
+                    guard install.terminationStatus == 0 else {
+                        continuation.resume(throwing: ServerError.uvInstallFailed(output))
+                        return
+                    }
+
+                    // ── Parse install directory from output ──
+                    // uv install script prints: "installing to <path>"
+                    var installDir = "\(NSHomeDirectory())/.local/bin"
+                    for line in output.components(separatedBy: "\n") {
+                        let trimmed = line.trimmingCharacters(in: .whitespaces)
+                        if trimmed.hasPrefix("installing to") {
+                            let parts = trimmed.components(separatedBy: "installing to")
+                            if parts.count > 1 {
+                                let dir = parts[1].trimmingCharacters(in: .whitespaces)
+                                if !dir.isEmpty { installDir = dir }
+                            }
+                        }
+                    }
+
+                    // ── chmod +x the installed binaries ──
+                    // This is the CRITICAL fix: uv install script does NOT set +x.
+                    for binary in ["uv", "uvx"] {
+                        let binaryPath = "\(installDir)/\(binary)"
+                        if FileManager.default.fileExists(atPath: binaryPath) {
+                            let chmod = Process()
+                            chmod.executableURL = URL(fileURLWithPath: "/bin/chmod")
+                            chmod.arguments = ["+x", binaryPath]
+                            try? chmod.run()
+                            chmod.waitUntilExit()
+                        }
+                    }
+
+                    // ── Retry loop: wait for file + execute permission ──
+                    let uvBinaryPath = "\(installDir)/uv"
+                    for i in 1...6 {
+                        if FileManager.default.isExecutableFile(atPath: uvBinaryPath) {
+                            continuation.resume(returning: uvBinaryPath)
+                            return
+                        }
+
+                        // Debug: list directory with permission flags
+                        var dirLog = "📂 Contents of \(installDir):"
+                        if let files = try? FileManager.default.contentsOfDirectory(atPath: installDir) {
+                            for f in files.sorted() {
+                                let fp = "\(installDir)/\(f)"
+                                var flags = ""
+                                if FileManager.default.isReadableFile(atPath: fp) { flags += "r" }
+                                if FileManager.default.isWritableFile(atPath: fp) { flags += "w" }
+                                if FileManager.default.isExecutableFile(atPath: fp) { flags += "x" }
+                                dirLog += "\n[\(flags)] \(f)"
+                            }
+                        } else {
+                            dirLog += "\n(no files or directory not readable)"
+                        }
+                        Task { @MainActor in self.appendLog(dirLog) }
+
+                        if i < 6 {
+                            Task { @MainActor in self.appendLog("⏳ uv not executable yet, retrying (\(i)/6)…") }
+                            Thread.sleep(forTimeInterval: 1.0)
+                        }
+                    }
+
+                    // ── Final attempt: re-run findUvExecutable ──
+                    if let found = ServerManager.findUvExecutable() {
+                        continuation.resume(returning: found)
+                        return
+                    }
+
+                    continuation.resume(throwing: ServerError.uvNotFoundAfterInstall)
+
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
         }
     }
 
@@ -954,81 +1121,7 @@ final class ServerManager: ObservableObject {
         return brand.hasPrefix("Apple M1")
     }
 
-    // MARK: - Find / Install uv
-
-    /// Search for uv in common locations. Returns an absolute path, or "" if not found.
-    private static func findUv() -> String {
-        let candidates = [
-            "/opt/homebrew/bin/uv",
-            "/usr/local/bin/uv",
-            "\(NSHomeDirectory())/.local/bin/uv",
-            "\(NSHomeDirectory())/.cargo/bin/uv",
-        ]
-        for path in candidates {
-            if FileManager.default.fileExists(atPath: path) {
-                return path
-            }
-        }
-        let which = try? runSync("/bin/sh", args: ["-c", "command -v uv 2>/dev/null"])
-        if let p = which?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !p.isEmpty,
-           p.hasPrefix("/"),
-           FileManager.default.fileExists(atPath: p) {
-            return p
-        }
-        return ""
-    }
-
-    /// Download and install uv via the official install script.
-    /// Inherits the current process environment so HOME is preserved.
-    private func installUv() async throws -> String {
-        let scriptURL = "https://astral.sh/uv/install.sh"
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = ["-c", "curl -LsSf \(scriptURL) | sh"]
-
-        // Inherit current process environment to preserve HOME, USER, etc.
-        // Only add common bin directories to PATH if missing.
-        var env = ProcessInfo.processInfo.environment
-        var path = env["PATH"] ?? "/usr/bin:/bin"
-        for add in ["/opt/homebrew/bin", "\(NSHomeDirectory())/.local/bin", "\(NSHomeDirectory())/.cargo/bin"] {
-            if !path.contains(add) {
-                path = "\(add):\(path)"
-            }
-        }
-        env["PATH"] = path
-        process.environment = env
-
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-
-        try process.run()
-        process.waitUntilExit()
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: data, encoding: .utf8) ?? ""
-        appendLog(output)
-
-        guard process.terminationStatus == 0 else {
-            throw ServerError.uvInstallFailed(output)
-        }
-
-        // Check both possible install locations
-        let installCandidates = [
-            "\(NSHomeDirectory())/.local/bin/uv",
-            "\(NSHomeDirectory())/.cargo/bin/uv",
-        ]
-        for candidate in installCandidates {
-            if FileManager.default.isExecutableFile(atPath: candidate) {
-                return candidate
-            }
-        }
-
-        throw ServerError.uvNotFoundAfterInstall
-    }
-
-    // MARK: - Helpers
+    // MARK: - Python Detection
 
     private static func findSystemPython() -> String? {
         let candidates = [
@@ -1054,28 +1147,40 @@ final class ServerManager: ObservableObject {
         return nil
     }
 
+    // MARK: - Port Management (optimized)
+
+    /// Find an available port, trying common ports first.
     private func findAvailablePort() -> Int? {
+        // Fast path: try preferred ports first (covers >95% of cases)
+        let preferred = [8765, 8888, 8890, 8900, 8766, 5000, 3000, 8080, 9090, 9000]
+        for port in preferred {
+            if isPortAvailable(port) { return port }
+        }
+        // Slow path: scan the range
         for port in 1024...65535 {
-            let sock = socket(AF_INET, SOCK_STREAM, 0)
-            guard sock >= 0 else { continue }
-            defer { close(sock) }
-
-            var addr = sockaddr_in()
-            addr.sin_family = sa_family_t(AF_INET)
-            addr.sin_port = UInt16(port).bigEndian
-            addr.sin_addr.s_addr = in_addr_t(bigEndian: 0x7f000001)
-
-            let addrLen = socklen_t(MemoryLayout<sockaddr_in>.size)
-            let result = withUnsafePointer(to: &addr) {
-                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                    bind(sock, $0, addrLen)
-                }
-            }
-            if result == 0 {
-                return port
-            }
+            if isPortAvailable(port) { return port }
         }
         return nil
+    }
+
+    /// Check if a specific port is available for binding on 127.0.0.1.
+    private func isPortAvailable(_ port: Int) -> Bool {
+        let sock = socket(AF_INET, SOCK_STREAM, 0)
+        guard sock >= 0 else { return false }
+        defer { close(sock) }
+
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = UInt16(port).bigEndian
+        addr.sin_addr.s_addr = in_addr_t(bigEndian: 0x7f000001)
+
+        let addrLen = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let result = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                bind(sock, $0, addrLen)
+            }
+        }
+        return result == 0
     }
 
     // MARK: - Status updates
