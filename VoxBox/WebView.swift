@@ -2,7 +2,7 @@ import SwiftUI
 import WebKit
 
 struct WebView: NSViewRepresentable {
-    let url: URL
+    let serverPort: Int
     /// (audioData, textUsed)
     var onAudioCaptured: ((Data, String) -> Void)? = nil
     /// User clicked save in the in-page notification
@@ -28,12 +28,12 @@ struct WebView: NSViewRepresentable {
 
         let userContentController = WKUserContentController()
 
-        // ── VoxBox bridge ──
+        // ── VoxBox bridge (port injected for API calls) ──
         let bridgeScript = """
         window.voxbox = {
             platform: 'macOS',
             version: '\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")',
-            getStatus: function() { return '\(url.absoluteString)'; },
+            port: \(serverPort),
             log: function(msg) { window.webkit.messageHandlers.voxbox.postMessage({type: 'log', message: msg}); }
         };
         """
@@ -53,9 +53,16 @@ struct WebView: NSViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
 
-        context.coordinator.requestedURL = url
-        let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
-        webView.load(request)
+        // Load bundled frontend; fall back to server URL if missing
+        if let localURL = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "Frontend") {
+            webView.loadFileURL(localURL, allowingReadAccessTo: localURL.deletingLastPathComponent())
+            print("📄 Loading bundled Frontend/index.html")
+        } else {
+            let fallbackURL = URL(string: "http://127.0.0.1:\(serverPort)")!
+            webView.load(URLRequest(url: fallbackURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10))
+            print("⚠️ Frontend/index.html not found, falling back to server URL")
+        }
+
         return webView
     }
 
@@ -64,17 +71,11 @@ struct WebView: NSViewRepresentable {
         context.coordinator.onSaveRequested = onSaveRequested
         context.coordinator.onSaveHistoryItem = onSaveHistoryItem
         context.coordinator.onOpenRecordingsFolder = onOpenRecordingsFolder
-        guard url != context.coordinator.requestedURL else { return }
-        context.coordinator.requestedURL = url
-        guard !context.coordinator.isLoading else { return }
-        let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
-        webView.load(request)
     }
 
     // MARK: - JS Injection
 
     private func createCaptureScript() -> String {
-        // Read language for JS strings (no extra backslashes—clean interpolation)
         let zh = LocalizationManager.shared.isChinese
         let jsClockTooltip = zh ? "打开输出文件夹" : "Open Output Folder"
         let jsAutoSavedToast = zh ? "🎵 已自动保存" : "🎵 Auto-saved"
@@ -156,7 +157,7 @@ struct WebView: NSViewRepresentable {
         document.body.appendChild(btn);
     }
 
-    // ── Compact notification (top-center, no save button) ──
+    // ── Compact notification (top-center) ──
     function showNotification(text) {
         var existing = document.getElementById('voxbox-notification');
         if (existing) existing.remove();
@@ -186,7 +187,6 @@ struct WebView: NSViewRepresentable {
             '</button>' +
             '</div>';
 
-        // Position: top-center (avoids status bar overlap at top-right)
         notif.style.cssText = [
             'position:fixed',
             'top:12px',
@@ -262,7 +262,6 @@ struct WebView: NSViewRepresentable {
                         clone.arrayBuffer().then(function(buffer) {
                             var base64 = arrayBufferToBase64(buffer);
 
-                            // Send to Swift (will auto-save)
                             if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.audioCaptured) {
                                 window.webkit.messageHandlers.audioCaptured.postMessage({
                                     data: base64,
@@ -271,7 +270,6 @@ struct WebView: NSViewRepresentable {
                                 });
                             }
 
-                            // Show compact notification
                             showNotification(inputText);
                         }).catch(function(e) {
                             console.log('[VoxBox] Audio capture error:', e);
@@ -292,7 +290,6 @@ struct WebView: NSViewRepresentable {
         });
     }
 
-    // Re-ensure clock button on DOM changes (SPAs may replace body)
     var observer = new MutationObserver(function() {
         if (!document.getElementById('voxbox-clock-btn')) {
             ensureClockButton();
@@ -318,32 +315,19 @@ struct WebView: NSViewRepresentable {
         var onSaveRequested: (() -> Void)?
         var onSaveHistoryItem: ((Int) -> Void)?
         var onOpenRecordingsFolder: (() -> Void)?
-        var requestedURL: URL?
-        var isLoading = false
-
-        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-            isLoading = true
-        }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            isLoading = false
             print("✅ WebView loaded: \(webView.url?.absoluteString ?? "unknown")")
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-            isLoading = false
             print("❌ WebView failed: \(error.localizedDescription)")
         }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            isLoading = false
             let nsError = error as NSError
             if nsError.domain == "WebKitErrorDomain" && nsError.code == 102 {
-                print("⚠️ WebView load interrupted (likely double-load), retrying...")
-                if webView.url == nil, let url = requestedURL {
-                    let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
-                    webView.load(request)
-                }
+                print("⚠️ WebView load interrupted (likely double-load)")
             } else {
                 print("⚠️ WebView provisional load failed: \(error.localizedDescription)")
             }

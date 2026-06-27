@@ -24,7 +24,7 @@ struct ContentView: View {
                     WarmingUpView(port: port)
                 case .running:
                     WebView(
-                        url: URL(string: "http://127.0.0.1:\(serverManager.port)")!,
+                        serverPort: serverManager.port,
                         onAudioCaptured: { data, text in
                             serverManager.captureAudio(data: data, text: text)
                         },
@@ -48,15 +48,13 @@ struct ContentView: View {
                 }
             }
 
-            // ── Refined status pill (bottom-left, clear of scrollbar) ──
+            // ── Status pill (bottom-left, clear of scrollbar) ──
             VStack {
                 Spacer()
                 HStack {
                     HStack(spacing: 5) {
                         StatusBadge(status: serverManager.status)
 
-                        // Settings gear — using onTapGesture + Image to avoid
-                        // macOS accentColor blue tint that .buttonStyle(.plain) inherits.
                         Image(systemName: "gearshape")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.secondary)
