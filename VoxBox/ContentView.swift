@@ -13,11 +13,21 @@ struct ContentView: View {
             
             Group {
                 switch serverManager.status {
-                case .stopped: LaunchView()
-                case .starting: LoadingView(message: "Starting Python backend…")
-                case .downloading(let progress): ModelDownloadView(progress: progress)
-                case .running: WebView(url: URL(string: "http://127.0.0.1:\(serverManager.port)")!)
-                case .error(let message): ErrorView(message: message) { serverManager.start() }
+                case .stopped:
+                    LaunchView()
+                case .starting:
+                    LoadingView(message: "Starting Python backend…")
+                case .downloading(let progress):
+                    ModelDownloadView(progress: progress)
+                case .running:
+                    WebView(url: URL(string: "http://127.0.0.1:\(serverManager.port)")!)
+                case .error(let message):
+                    ErrorView(
+                        message: message,
+                        onRetry: { serverManager.start() },
+                        onGoHome: { serverManager.status = .stopped }
+                    )
+                    .environmentObject(serverManager)
                 }
             }
             
