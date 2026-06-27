@@ -104,6 +104,10 @@ struct L10n {
     static var generateAudioFirst: String {
         zh ? "请先在网页界面生成语音，然后再保存。" : "Generate audio in the web UI first, then try saving again."
     }
+    static var audioFormat: String { zh ? "默认格式" : "Default Format" }
+    static var formatDesc: String {
+        zh ? "自动保存和导出的默认音频格式" : "Default audio format for auto-save and export"
+    }
 
     // MARK: - Launch
     static var startVoxBox: String { zh ? "启动 VoxBox" : "Start VoxBox" }
