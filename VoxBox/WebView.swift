@@ -2285,7 +2285,7 @@ struct WebView: NSViewRepresentable {
             panel.canChooseFiles = true
             panel.canChooseDirectories = false
             panel.allowsMultipleSelection = false
-            panel.allowedContentTypes = [.wav, .mp3, .flac, UTType(filenameExtension: "ogg") ?? .audio, UTType(filenameExtension: "aac") ?? .audio]
+            panel.allowedContentTypes = [.wav, .mp3,UTType(filenameExtension: "ogg") ?? .audio, UTType(filenameExtension: "aac") ?? .audio]
             panel.canCreateDirectories = false
             panel.level = .modalPanel
 
