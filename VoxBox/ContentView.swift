@@ -25,8 +25,8 @@ struct ContentView: View {
                 case .running:
                     WebView(
                         port: serverManager.port,
-                        onAudioCaptured: { data, text in
-                            serverManager.captureAudio(data: data, text: text)
+                        onAudioCaptured: { data, text, voice in
+                            serverManager.captureAudio(data: data, text: text, voice: voice)
                         },
                         onSaveRequested: {
                             serverManager.saveAudio()

@@ -253,7 +253,7 @@ final class ServerManager: ObservableObject {
 
     // MARK: - Audio Capture
 
-    func captureAudio(data: Data, text: String) {
+    func captureAudio(data: Data, text: String, voice: String = "") {
         lastAudioData = data
         lastAudioText = text
 
@@ -264,7 +264,7 @@ final class ServerManager: ObservableObject {
             audioHistory.removeFirst()
         }
 
-        autoSave(audioData: data, text: text)
+        autoSave(audioData: data, text: text, voice: voice)
 
         appendLog("🎵 Audio captured: \(data.count) bytes, text: \"\(text.prefix(40))\" (history: \(audioHistory.count))")
     }
@@ -296,28 +296,57 @@ final class ServerManager: ObservableObject {
 
     // MARK: - Auto-save
 
-    private func autoSave(audioData: Data, text: String) {
+    private func autoSave(audioData: Data, text: String, voice: String = "") {
         let folder = outputFolder
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
 
         let fmt = preferredFormat
 
-        var name = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !name.isEmpty {
-            name = name
+        // ── Build safe text segment (max ~15 chars) ──
+        var shortText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !shortText.isEmpty {
+            shortText = shortText
                 .replacingOccurrences(of: ":", with: "：")
                 .replacingOccurrences(of: "/", with: "-")
                 .replacingOccurrences(of: "\n", with: " ")
                 .replacingOccurrences(of: "\r", with: " ")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            if name.count > 60 { name = String(name.prefix(60)) }
         }
-        if name.isEmpty { name = "recording" }
+        if shortText.isEmpty { shortText = "recording" }
+        let maxTextChars = 15
+        if shortText.count > maxTextChars {
+            shortText = String(shortText.prefix(maxTextChars)) + "…"
+        }
 
+        // ── Clean voice name ──
+        var cleanVoice = voice.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleanVoice.isEmpty {
+            cleanVoice = cleanVoice
+                .replacingOccurrences(of: ":", with: "：")
+                .replacingOccurrences(of: "/", with: "-")
+        }
+
+        // ── Timestamp ──
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd_HHmmss"
         let timestamp = df.string(from: Date())
-        let filename = "\(timestamp)_\(name).\(fmt.fileExtension)"
+
+        // ── Assemble: 语音名：文本_时间日期.ext ──
+        var filename: String
+        if cleanVoice.isEmpty {
+            filename = "\(shortText)_\(timestamp)"
+        } else {
+            filename = "\(cleanVoice)：\(shortText)_\(timestamp)"
+        }
+
+        // macOS filename limit: 255 UTF-8 bytes
+        let extWithDot = ".\(fmt.fileExtension)"
+        let maxNameBytes = 255 - extWithDot.utf8.count
+        while filename.utf8.count > maxNameBytes {
+            filename = String(filename.dropLast())
+        }
+        filename += extWithDot
+
         let fileURL = folder.appendingPathComponent(filename)
 
         let outputData: Data
