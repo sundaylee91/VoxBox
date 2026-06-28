@@ -500,7 +500,7 @@ enum VoxBoxHTML {
         display: flex;
         align-items: center;
         gap: 6px;
-        font-size: 12px;
+        font-size: 13px;
         font-weight: 500;
         color: var(--text-tertiary);
         cursor: pointer;
@@ -532,6 +532,7 @@ enum VoxBoxHTML {
         display: flex;
         flex-direction: column;
         gap: 14px;
+        padding: 6px 0;
     }
 
     .advanced-panel.open {
@@ -981,7 +982,7 @@ enum VoxBoxHTML {
 
             <!-- Advanced Settings Toggle -->
             <button class="advanced-toggle" id="advanced-toggle">
-                <span data-l10n="advancedSettings">高级设置</span>
+                <span data-l10n="advancedSettings">⚙ 高级设置</span>
                 <span class="chevron">▾</span>
             </button>
 
@@ -1053,7 +1054,7 @@ enum VoxBoxHTML {
         deleteServerVoice: IS_CHINESE ? '删除服务器端自定义语音' : 'Delete server-side custom voice',
         voiceDeleted: IS_CHINESE ? '自定义语音已删除' : 'Custom voice deleted',
         deleteVoiceConfirm: IS_CHINESE ? '确定要永久删除该自定义语音吗？此操作不可撤销。' : 'Delete this custom voice permanently? This cannot be undone.',
-        advancedSettings: IS_CHINESE ? '高级设置' : 'Advanced Settings',
+        advancedSettings: IS_CHINESE ? '⚙ 高级设置' : '⚙ Advanced Settings',
         speed: IS_CHINESE ? '语速' : 'Speed',
         sampleRate: IS_CHINESE ? '采样率' : 'Sample Rate',
         cfgScale: IS_CHINESE ? 'CFG 缩放' : 'CFG Scale',
@@ -1899,8 +1900,8 @@ enum VoxBoxHTML {
 
 struct WebView: NSViewRepresentable {
     let port: Int
-    /// (audioData, textUsed)
-    var onAudioCaptured: ((Data, String) -> Void)? = nil
+    /// (audioData, textUsed, voiceName)
+    var onAudioCaptured: ((Data, String, String) -> Void)? = nil
     /// User clicked save in the in-page notification
     var onSaveRequested: (() -> Void)? = nil
     /// User clicked save for a specific history item
@@ -2093,12 +2094,14 @@ struct WebView: NSViewRepresentable {
             else urlStr = String(url);
 
             var inputText = '';
+            var voiceName = '';
             if (urlStr.indexOf('/audio/speech') !== -1) {
                 try {
                     var options = arguments[1];
                     if (options && typeof options.body === 'string') {
                         var body = JSON.parse(options.body);
                         inputText = body.input || '';
+                        voiceName = body.voice || '';
                     }
                 } catch(e) {}
             }
@@ -2116,7 +2119,8 @@ struct WebView: NSViewRepresentable {
                                 window.webkit.messageHandlers.audioCaptured.postMessage({
                                     data: base64,
                                     mimeType: ct,
-                                    text: inputText
+                                    text: inputText,
+                                    voice: voiceName
                                 });
                             }
 
@@ -2140,7 +2144,7 @@ struct WebView: NSViewRepresentable {
     // MARK: - Coordinator
 
     class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
-        var onAudioCaptured: ((Data, String) -> Void)?
+        var onAudioCaptured: ((Data, String, String) -> Void)?
         var onSaveRequested: (() -> Void)?
         var onSaveHistoryItem: ((Int) -> Void)?
         var onOpenRecordingsFolder: (() -> Void)?
@@ -2248,9 +2252,10 @@ struct WebView: NSViewRepresentable {
                     return
                 }
                 let text = body["text"] as? String ?? ""
+                let voice = body["voice"] as? String ?? ""
                 print("🎵 [VoxBox] Audio captured: \(audioData.count) bytes, text: \"\(text.prefix(40))\"")
                 DispatchQueue.main.async { [weak self] in
-                    self?.onAudioCaptured?(audioData, text)
+                    self?.onAudioCaptured?(audioData, text, voice)
                 }
 
             default:
