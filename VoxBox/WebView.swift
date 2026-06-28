@@ -536,7 +536,7 @@ enum VoxBoxHTML {
     }
 
     .advanced-panel.open {
-        max-height: 300px;
+        max-height: 500px;
         opacity: 1;
         margin-top: 2px;
     }
@@ -1008,6 +1008,16 @@ enum VoxBoxHTML {
                     <input type="range" id="timesteps-slider" min="4" max="30" step="1" value="10">
                     <span class="setting-value" id="timesteps-value">10</span>
                 </div>
+                <div class="setting-row">
+                    <span class="setting-label" data-l10n="seed">随机种子</span>
+                    <input type="number" id="seed-input" min="-1" max="999999" step="1" value="-1" style="width:80px;padding:4px 8px;font-family:inherit;font-size:13px;color:var(--text-primary);background:var(--input-bg);border:1.5px solid var(--input-border);border-radius:8px;outline:none;text-align:center;">
+                    <button class="pick-audio-btn" id="btn-randomize-seed" data-l10n="randomize" style="font-size:11px;padding:4px 10px;">随机</button>
+                </div>
+                <div class="setting-row">
+                    <span class="setting-label" data-l10n="maxLength">最大长度</span>
+                    <input type="range" id="max-length-slider" min="10" max="500" step="10" value="200">
+                    <span class="setting-value" id="max-length-value">200s</span>
+                </div>
             </div>
         </div>
 
@@ -1059,6 +1069,9 @@ enum VoxBoxHTML {
         sampleRate: IS_CHINESE ? '采样率' : 'Sample Rate',
         cfgScale: IS_CHINESE ? 'CFG 缩放' : 'CFG Scale',
         timesteps: IS_CHINESE ? '推理步数' : 'Timesteps',
+        seed: IS_CHINESE ? '随机种子' : 'Seed',
+        maxLength: IS_CHINESE ? '最大长度' : 'Max Length',
+        randomize: IS_CHINESE ? '随机' : 'Random',
         generateAndPlay: IS_CHINESE ? '生成并播放' : 'Generate & Play',
         saveAudio: IS_CHINESE ? '保存音频' : 'Save Audio',
         ready: IS_CHINESE ? '就绪' : 'Ready',
@@ -1130,6 +1143,10 @@ enum VoxBoxHTML {
     var cfgValue = document.getElementById('cfg-value');
     var timestepsSlider = document.getElementById('timesteps-slider');
     var timestepsValue = document.getElementById('timesteps-value');
+    var seedInput = document.getElementById('seed-input');
+    var btnRandomizeSeed = document.getElementById('btn-randomize-seed');
+    var maxLengthSlider = document.getElementById('max-length-slider');
+    var maxLengthValue = document.getElementById('max-length-value');
     var voiceSelect = document.getElementById('voice-select');
     var voiceModeSelect = document.getElementById('voice-mode-select');
     var voiceRefresh = document.getElementById('voice-refresh');
@@ -1602,6 +1619,14 @@ enum VoxBoxHTML {
         timestepsValue.textContent = timestepsSlider.value;
     });
 
+    maxLengthSlider.addEventListener('input', function() {
+        maxLengthValue.textContent = maxLengthSlider.value + 's';
+    });
+
+    btnRandomizeSeed.addEventListener('click', function() {
+        seedInput.value = Math.floor(Math.random() * 999999);
+    });
+
     // ── Helpers ──
     function setStatus(state, message) {
         statusEl.className = 'status ' + state;
@@ -1797,6 +1822,12 @@ enum VoxBoxHTML {
             body.voice = voice;
             body.voice_mode = voiceMode;
         }
+
+        var seed = parseInt(seedInput.value);
+        if (seed >= 0) {
+            body.seed = seed;
+        }
+        body.max_length = parseInt(maxLengthSlider.value);
 
         return fetch(SPEECH_ENDPOINT, {
             method: 'POST',
