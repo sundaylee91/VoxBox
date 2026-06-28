@@ -488,6 +488,13 @@ enum VoxBoxHTML {
         pointer-events: none;
     }
 
+    /* ── Toggle Group (Create Voice + Advanced Settings) ── */
+    .toggle-group {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
     /* ── Advanced Settings Toggle ── */
     .advanced-toggle {
         display: flex;
@@ -934,71 +941,73 @@ enum VoxBoxHTML {
                     <option value="reference">Reference</option>
                     <option value="high_similarity" data-l10n="highSim">高相似度</option>
                 </select>
-                <button class="voice-preset-btn" id="btn-save-preset" data-l10n-title="savePreset" title="保存为自定义语音预设">💾</button>
                 <button class="voice-preset-btn danger" id="btn-delete-server-voice" data-l10n-title="deleteServerVoice" title="删除服务器端自定义语音" disabled>🗑</button>
             </div>
         </div>
 
-        <!-- Advanced Settings Toggle -->
-        <button class="advanced-toggle" id="advanced-toggle">
-            <span data-l10n="advancedSettings">高级设置</span>
-            <span class="chevron">▾</span>
-        </button>
-
-        <!-- Advanced Panel -->
-        <div class="advanced-panel" id="advanced-panel">
-            <div class="setting-row">
-                <span class="setting-label" data-l10n="speed">语速</span>
-                <input type="range" id="speed-slider" min="0.5" max="2.0" step="0.1" value="1.0">
-                <span class="setting-value" id="speed-value">1.0x</span>
-            </div>
-            <div class="setting-row">
-                <span class="setting-label" data-l10n="sampleRate">采样率</span>
-                <input type="range" id="sample-rate-slider" min="16000" max="48000" step="1000" value="24000">
-                <span class="setting-value" id="sample-rate-value">24 kHz</span>
-            </div>
-            <div class="setting-row">
-                <span class="setting-label" data-l10n="cfgScale">CFG 缩放</span>
-                <input type="range" id="cfg-slider" min="1.0" max="4.0" step="0.1" value="2.0">
-                <span class="setting-value" id="cfg-value">2.0</span>
-            </div>
-            <div class="setting-row">
-                <span class="setting-label" data-l10n="timesteps">推理步数</span>
-                <input type="range" id="timesteps-slider" min="4" max="30" step="1" value="10">
-                <span class="setting-value" id="timesteps-value">10</span>
-            </div>
-        </div>
-
-        <!-- Create Voice Section -->
-        <button class="advanced-toggle" id="create-voice-toggle">
-            <span data-l10n="createVoiceTitle">🎙 创建新语音</span>
-            <span class="chevron">▾</span>
-        </button>
-
-        <div class="advanced-panel create-voice-panel" id="create-voice-panel">
-            <div class="setting-row">
-                <span class="setting-label" data-l10n="voiceName">语音名称</span>
-                <input type="text" id="new-voice-name" class="create-voice-input" placeholder="如: my-voice" maxlength="60">
-            </div>
-            <div class="setting-row">
-                <span class="setting-label" data-l10n="refAudio">参考音频</span>
-                <button class="pick-audio-btn" id="btn-pick-audio" data-l10n="chooseFile">选择文件…</button>
-                <span class="audio-path-display" id="audio-path-display"></span>
-            </div>
-            <div class="setting-row">
-                <span class="setting-label" data-l10n="promptText">转录文本</span>
-                <textarea id="new-voice-text" class="create-voice-textarea" placeholder="可选：精确转录文本（用于高相似度克隆）"></textarea>
-            </div>
-            <div class="setting-row">
-                <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-tertiary);cursor:pointer;">
-                    <input type="checkbox" id="new-voice-replace" style="width:14px;height:14px;">
-                    <span data-l10n="replaceIfExists">替换已存在的语音</span>
-                </label>
-            </div>
-            <button class="btn-create-voice" id="btn-create-voice">
-                <span id="btn-create-voice-text" data-l10n="createVoice">Create Voice</span>
+        <!-- Toggle Group: Create Voice + Advanced Settings -->
+        <div class="toggle-group">
+            <!-- Create Voice Section -->
+            <button class="advanced-toggle" id="create-voice-toggle">
+                <span data-l10n="createVoiceTitle">🎙 创建新语音</span>
+                <span class="chevron">▾</span>
             </button>
-            <div class="create-voice-status idle" id="create-voice-status" data-l10n="createVoiceHint">选择参考音频文件，输入名称后点击创建</div>
+
+            <div class="advanced-panel create-voice-panel" id="create-voice-panel">
+                <div class="setting-row">
+                    <span class="setting-label" data-l10n="voiceName">语音名称</span>
+                    <input type="text" id="new-voice-name" class="create-voice-input" placeholder="如: my-voice" maxlength="60">
+                </div>
+                <div class="setting-row">
+                    <span class="setting-label" data-l10n="refAudio">参考音频</span>
+                    <button class="pick-audio-btn" id="btn-pick-audio" data-l10n="chooseFile">选择文件…</button>
+                    <span class="audio-path-display" id="audio-path-display"></span>
+                </div>
+                <div class="setting-row">
+                    <span class="setting-label" data-l10n="promptText">转录文本</span>
+                    <textarea id="new-voice-text" class="create-voice-textarea" placeholder="可选：精确转录文本（用于高相似度克隆）"></textarea>
+                </div>
+                <div class="setting-row">
+                    <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-tertiary);cursor:pointer;">
+                        <input type="checkbox" id="new-voice-replace" style="width:14px;height:14px;">
+                        <span data-l10n="replaceIfExists">替换已存在的语音</span>
+                    </label>
+                </div>
+                <button class="btn-create-voice" id="btn-create-voice">
+                    <span id="btn-create-voice-text" data-l10n="createVoice">Create Voice</span>
+                </button>
+                <div class="create-voice-status idle" id="create-voice-status" data-l10n="createVoiceHint">选择参考音频文件，输入名称后点击创建</div>
+            </div>
+
+            <!-- Advanced Settings Toggle -->
+            <button class="advanced-toggle" id="advanced-toggle">
+                <span data-l10n="advancedSettings">高级设置</span>
+                <span class="chevron">▾</span>
+            </button>
+
+            <!-- Advanced Panel -->
+            <div class="advanced-panel" id="advanced-panel">
+                <div class="setting-row">
+                    <span class="setting-label" data-l10n="speed">语速</span>
+                    <input type="range" id="speed-slider" min="0.5" max="2.0" step="0.1" value="1.0">
+                    <span class="setting-value" id="speed-value">1.0x</span>
+                </div>
+                <div class="setting-row">
+                    <span class="setting-label" data-l10n="sampleRate">采样率</span>
+                    <input type="range" id="sample-rate-slider" min="16000" max="48000" step="1000" value="24000">
+                    <span class="setting-value" id="sample-rate-value">24 kHz</span>
+                </div>
+                <div class="setting-row">
+                    <span class="setting-label" data-l10n="cfgScale">CFG 缩放</span>
+                    <input type="range" id="cfg-slider" min="1.0" max="4.0" step="0.1" value="2.0">
+                    <span class="setting-value" id="cfg-value">2.0</span>
+                </div>
+                <div class="setting-row">
+                    <span class="setting-label" data-l10n="timesteps">推理步数</span>
+                    <input type="range" id="timesteps-slider" min="4" max="30" step="1" value="10">
+                    <span class="setting-value" id="timesteps-value">10</span>
+                </div>
+            </div>
         </div>
 
         <!-- Action Buttons -->
@@ -1041,10 +1050,7 @@ enum VoxBoxHTML {
         noVoices: IS_CHINESE ? '未找到预设语音' : 'No preset voices found',
         loadFailed: IS_CHINESE ? '加载失败' : 'Failed to load voices',
         highSim: IS_CHINESE ? '高相似度' : 'High Sim',
-        savePreset: IS_CHINESE ? '保存为自定义语音预设' : 'Save as custom voice preset',
         deleteServerVoice: IS_CHINESE ? '删除服务器端自定义语音' : 'Delete server-side custom voice',
-        presetNamePrompt: IS_CHINESE ? '请输入自定义预设名称：' : 'Enter custom preset name:',
-        presetSaved: IS_CHINESE ? '自定义预设已保存' : 'Custom preset saved',
         voiceDeleted: IS_CHINESE ? '自定义语音已删除' : 'Custom voice deleted',
         deleteVoiceConfirm: IS_CHINESE ? '确定要永久删除该自定义语音吗？此操作不可撤销。' : 'Delete this custom voice permanently? This cannot be undone.',
         advancedSettings: IS_CHINESE ? '高级设置' : 'Advanced Settings',
@@ -1126,7 +1132,6 @@ enum VoxBoxHTML {
     var voiceSelect = document.getElementById('voice-select');
     var voiceModeSelect = document.getElementById('voice-mode-select');
     var voiceRefresh = document.getElementById('voice-refresh');
-    var btnSavePreset = document.getElementById('btn-save-preset');
     var btnDeleteServerVoice = document.getElementById('btn-delete-server-voice');
     var btnGeneratePlay = document.getElementById('btn-generate-play');
     var btnGenerateSave = document.getElementById('btn-generate-save');
@@ -1178,7 +1183,7 @@ enum VoxBoxHTML {
         return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
     }
 
-    // ── LocalStorage Presets ──
+    // ── LocalStorage Presets (load only, for backward compat) ──
     function loadLocalPresets() {
         try {
             var raw = localStorage.getItem(LOCAL_PRESETS_KEY);
@@ -1187,29 +1192,6 @@ enum VoxBoxHTML {
         } catch(e) {
             localStoragePresets = [];
         }
-    }
-
-    function saveLocalPresetsToStorage() {
-        try {
-            localStorage.setItem(LOCAL_PRESETS_KEY, JSON.stringify(localStoragePresets));
-        } catch(e) {
-            console.warn('[VoxBox] Failed to save presets:', e);
-        }
-    }
-
-    function getCurrentSettings() {
-        var voiceVal = voiceSelect.value;
-        if (voiceVal && voiceVal.indexOf('__preset__') === 0) {
-            voiceVal = '';
-        }
-        return {
-            voice: voiceVal,
-            voice_mode: voiceModeSelect.value,
-            speed: parseFloat(speedSlider.value),
-            sample_rate: parseInt(sampleRateSlider.value),
-            cfg_value: parseFloat(cfgSlider.value),
-            inference_timesteps: parseInt(timestepsSlider.value)
-        };
     }
 
     function applySettings(settings) {
@@ -1366,39 +1348,6 @@ enum VoxBoxHTML {
             voiceSelect.setAttribute('data-is-server-custom', 'false');
         }
         updateDeleteButton();
-    });
-
-    // Save localStorage preset
-    btnSavePreset.addEventListener('click', function() {
-        var name = prompt(_('presetNamePrompt'), '');
-        if (!name || !name.trim()) return;
-        name = name.trim();
-
-        var settings = getCurrentSettings();
-        localStoragePresets.push({
-            name: name,
-            voice: settings.voice,
-            voice_mode: settings.voice_mode,
-            speed: settings.speed,
-            sample_rate: settings.sample_rate,
-            cfg_value: settings.cfg_value,
-            inference_timesteps: settings.inference_timesteps
-        });
-        saveLocalPresetsToStorage();
-        refreshVoiceDropdown();
-
-        _suppressVoiceChange = true;
-        try {
-            voiceSelect.value = '__preset__' + (localStoragePresets.length - 1);
-            voiceSelect.setAttribute('data-is-custom', 'true');
-            voiceSelect.setAttribute('data-custom-idx', String(localStoragePresets.length - 1));
-            voiceSelect.setAttribute('data-is-server-custom', 'false');
-        } finally {
-            _suppressVoiceChange = false;
-        }
-        updateDeleteButton();
-
-        showToast(_('presetSaved') + ': ' + name);
     });
 
     // Delete server-side custom voice
@@ -2224,6 +2173,39 @@ struct WebView: NSViewRepresentable {
                 NSWorkspace.shared.open(url)
             }
             return nil
+        }
+
+        // MARK: - WKUIDelegate (enables JS alert / confirm in WKWebView)
+
+        func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
+            let alert = NSAlert()
+            alert.messageText = "VoxBox"
+            alert.informativeText = message
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "OK")
+            guard let window = webView.window else {
+                completionHandler()
+                return
+            }
+            alert.beginSheetModal(for: window) { _ in
+                completionHandler()
+            }
+        }
+
+        func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
+            let alert = NSAlert()
+            alert.messageText = "VoxBox"
+            alert.informativeText = message
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "OK")
+            alert.addButton(withTitle: "Cancel")
+            guard let window = webView.window else {
+                completionHandler(false)
+                return
+            }
+            alert.beginSheetModal(for: window) { response in
+                completionHandler(response == .alertFirstButtonReturn)
+            }
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
