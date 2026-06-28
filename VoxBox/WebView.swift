@@ -989,16 +989,6 @@ enum VoxBoxHTML {
             <!-- Advanced Panel -->
             <div class="advanced-panel" id="advanced-panel">
                 <div class="setting-row">
-                    <span class="setting-label" data-l10n="speed">语速</span>
-                    <input type="range" id="speed-slider" min="0.5" max="2.0" step="0.1" value="1.0">
-                    <span class="setting-value" id="speed-value">1.0x</span>
-                </div>
-                <div class="setting-row">
-                    <span class="setting-label" data-l10n="sampleRate">采样率</span>
-                    <input type="range" id="sample-rate-slider" min="16000" max="48000" step="1000" value="24000">
-                    <span class="setting-value" id="sample-rate-value">24 kHz</span>
-                </div>
-                <div class="setting-row">
                     <span class="setting-label" data-l10n="cfgScale">CFG 缩放</span>
                     <input type="range" id="cfg-slider" min="1.0" max="4.0" step="0.1" value="2.0">
                     <span class="setting-value" id="cfg-value">2.0</span>
@@ -1014,9 +1004,9 @@ enum VoxBoxHTML {
                     <button class="pick-audio-btn" id="btn-randomize-seed" data-l10n="randomize" style="font-size:11px;padding:4px 10px;">随机</button>
                 </div>
                 <div class="setting-row">
-                    <span class="setting-label" data-l10n="maxLength">最大长度</span>
-                    <input type="range" id="max-length-slider" min="10" max="500" step="10" value="200">
-                    <span class="setting-value" id="max-length-value">200s</span>
+                    <span class="setting-label" data-l10n="maxLength">最大 Token 数</span>
+                    <input type="range" id="max-length-slider" min="128" max="4096" step="128" value="2048">
+                    <span class="setting-value" id="max-length-value">2048</span>
                 </div>
             </div>
         </div>
@@ -1065,12 +1055,10 @@ enum VoxBoxHTML {
         voiceDeleted: IS_CHINESE ? '自定义语音已删除' : 'Custom voice deleted',
         deleteVoiceConfirm: IS_CHINESE ? '确定要永久删除该自定义语音吗？此操作不可撤销。' : 'Delete this custom voice permanently? This cannot be undone.',
         advancedSettings: IS_CHINESE ? '⚙ 高级设置' : '⚙ Advanced Settings',
-        speed: IS_CHINESE ? '语速' : 'Speed',
-        sampleRate: IS_CHINESE ? '采样率' : 'Sample Rate',
         cfgScale: IS_CHINESE ? 'CFG 缩放' : 'CFG Scale',
         timesteps: IS_CHINESE ? '推理步数' : 'Timesteps',
         seed: IS_CHINESE ? '随机种子' : 'Seed',
-        maxLength: IS_CHINESE ? '最大长度' : 'Max Length',
+        maxLength: IS_CHINESE ? '最大 Token 数' : 'Max Tokens',
         randomize: IS_CHINESE ? '随机' : 'Random',
         generateAndPlay: IS_CHINESE ? '生成并播放' : 'Generate & Play',
         saveAudio: IS_CHINESE ? '保存音频' : 'Save Audio',
@@ -1135,10 +1123,6 @@ enum VoxBoxHTML {
     var clearBtn = document.getElementById('clear-btn');
     var advancedToggle = document.getElementById('advanced-toggle');
     var advancedPanel = document.getElementById('advanced-panel');
-    var speedSlider = document.getElementById('speed-slider');
-    var speedValue = document.getElementById('speed-value');
-    var sampleRateSlider = document.getElementById('sample-rate-slider');
-    var sampleRateValue = document.getElementById('sample-rate-value');
     var cfgSlider = document.getElementById('cfg-slider');
     var cfgValue = document.getElementById('cfg-value');
     var timestepsSlider = document.getElementById('timesteps-slider');
@@ -1228,14 +1212,6 @@ enum VoxBoxHTML {
                 }
             }
             if (settings.voice_mode !== undefined) voiceModeSelect.value = settings.voice_mode;
-            if (settings.speed !== undefined) {
-                speedSlider.value = settings.speed;
-                speedValue.textContent = settings.speed.toFixed(1) + 'x';
-            }
-            if (settings.sample_rate !== undefined) {
-                sampleRateSlider.value = settings.sample_rate;
-                sampleRateValue.textContent = (settings.sample_rate / 1000).toFixed(0) + ' kHz';
-            }
             if (settings.cfg_value !== undefined) {
                 cfgSlider.value = settings.cfg_value;
                 cfgValue.textContent = settings.cfg_value.toFixed(1);
@@ -1603,14 +1579,6 @@ enum VoxBoxHTML {
     });
 
     // ── Sliders ──
-    speedSlider.addEventListener('input', function() {
-        speedValue.textContent = parseFloat(speedSlider.value).toFixed(1) + 'x';
-    });
-
-    sampleRateSlider.addEventListener('input', function() {
-        sampleRateValue.textContent = (parseInt(sampleRateSlider.value) / 1000).toFixed(0) + ' kHz';
-    });
-
     cfgSlider.addEventListener('input', function() {
         cfgValue.textContent = parseFloat(cfgSlider.value).toFixed(1);
     });
@@ -1620,7 +1588,7 @@ enum VoxBoxHTML {
     });
 
     maxLengthSlider.addEventListener('input', function() {
-        maxLengthValue.textContent = maxLengthSlider.value + 's';
+        maxLengthValue.textContent = maxLengthSlider.value;
     });
 
     btnRandomizeSeed.addEventListener('click', function() {
@@ -1797,8 +1765,6 @@ enum VoxBoxHTML {
 
     // ── Core: call TTS API ──
     function callTTS(text) {
-        var speed = parseFloat(speedSlider.value);
-        var sampleRate = parseInt(sampleRateSlider.value);
         var cfg = parseFloat(cfgSlider.value);
         var timesteps = parseInt(timestepsSlider.value);
         var voice = voiceSelect.value;
@@ -1811,8 +1777,6 @@ enum VoxBoxHTML {
         var body = {
             model: 'voxcpm2',
             input: text,
-            speed: speed,
-            sample_rate: sampleRate,
             cfg_value: cfg,
             inference_timesteps: timesteps,
             response_format: 'wav'
